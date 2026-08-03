@@ -13,7 +13,7 @@
 
 # File Conventions
 
-- Deliverables (`README.md`, `DECISIONS.md`) live at repo top level.
+- Deliverables and reference docs (`README.md`, `DECISIONS.md`, `BRIEF.md`) live at repo top level, UPPERCASE.
 - Intermediate outputs (scope, tech stack, testing strategy, clean code enforcement plan) live under `docs/`, lowercase filenames.
 
 # Commit History
