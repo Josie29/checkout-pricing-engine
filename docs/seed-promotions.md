@@ -24,7 +24,6 @@ Prices are integer cents, not decimal dollars — avoids floating-point rounding
 | P4 | $5 off pour-over dripper | FIXED_OFF_ITEM | Item | SKU: BREW-V60 | none | −$5 |
 | P2 | 15% off $50+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $50 | 15% off subtotal |
 | P5 | 20% off $100+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $100 | 20% off subtotal |
-| P3 | Free shipping (members) | FREE_SHIPPING | Shipping | shipping | `is_member = true` | shipping → $0 |
 | P7 | Free shipping $100+ | FREE_SHIPPING | Shipping | shipping | subtotal ≥ $100 | shipping → $0 |
 
 ## Phases
@@ -35,11 +34,11 @@ Prices are integer cents, not decimal dollars — avoids floating-point rounding
 |---|---|---|
 | 1 | Item | Original line item price/qty |
 | 2 | Cart | Subtotal *after* Item-phase discounts are applied |
-| 3 | Shipping | Cart state after Cart-phase discounts (membership flag is independent of this) |
+| 3 | Shipping | Cart state after Cart-phase discounts |
 
 ### How exclusivity works
 
-Derived structurally from phase cardinality: at most one Item-phase promo per line item (P1/P6 conflict — same Coffee Beans lines; P4 doesn't, since nothing else targets `BREW-V60`), at most one Cart-phase promo (P2/P5), at most one Shipping-phase promo (P3/P7). Can't express a cross-cutting exclusion unrelated to target overlap — not needed today.
+Derived structurally from phase cardinality: at most one Item-phase promo per line item (P1/P6 conflict — same Coffee Beans lines; P4 doesn't, since nothing else targets `BREW-V60`), at most one Cart-phase promo (P2/P5). Shipping phase has a single promo (P7) today, so no conflict to resolve there yet. Can't express a cross-cutting exclusion unrelated to target overlap — not needed today.
 
 
 
