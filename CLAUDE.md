@@ -13,8 +13,17 @@
 
 # File Conventions
 
-- Deliverables (`README.md`, `DECISIONS.md`) live at repo top level.
+- Deliverables and reference docs (`README.md`, `DECISIONS.md`, `BRIEF.md`) live at repo top level, UPPERCASE.
 - Intermediate outputs (scope, tech stack, testing strategy, clean code enforcement plan) live under `docs/`, lowercase filenames.
+
+# Governing Docs
+
+Adhere to these when writing code — not just background reading:
+
+- `docs/scope.md` — what's in/out of scope
+- `docs/tech-stack.md` — the stack and why
+- `docs/testing-strategy.md` — what to test, how, and CI-passing definition
+- `docs/clean-code-enforcement.md` — lint/type/format gates
 
 # Commit History
 
