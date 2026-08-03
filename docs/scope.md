@@ -16,7 +16,7 @@ High-level component breakdown. Backend is the focus; frontend stays minimal.
 | Pricing API | `POST /price` (cart + active promotion ids → itemized result) | Core |
 | Promotions API | List promotions + active state (seeded data; no authoring CRUD) | Core |
 | Tests | Unit per promotion kind, combination/stacking cases, property-based invariant tests, golden examples | Core |
-| Best-allowed-combination optimizer | Stretch: pick optimal legal promo set for shopper, within time budget on large carts | Stretch |
+| Best-allowed-combination optimizer | Pick optimal legal promo set for shopper (docs/optimizer-spec.md) | Core |
 
 ## Frontend (single page, minimal)
 

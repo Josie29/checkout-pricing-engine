@@ -22,9 +22,10 @@ Prices are integer cents, not decimal dollars — avoids floating-point rounding
 | P1 | Beans: buy 2 get 1 free | BXGY | Item | Category: Coffee Beans | qty ≥ 3 | cheapest unit free |
 | P6 | Beans: bulk 20% off | PCT_OFF_ITEM | Item | Category: Coffee Beans | qty ≥ 3 | 20% off each |
 | P4 | $5 off pour-over dripper | FIXED_OFF_ITEM | Item | SKU: BREW-V60 | none | −$5 |
-| P2 | 15% off $50+ | PCT_OFF_CART | Cart | cart | subtotal ≥ $50 | 15% off subtotal |
-| P5 | 20% off $100+ | PCT_OFF_CART | Cart | cart | subtotal ≥ $100 | 20% off subtotal |
-| P3 | Free shipping (members) | FREE_SHIPPING | Shipping | cart | `is_member = true` | shipping → $0 |
+| P2 | 15% off $50+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $50 | 15% off subtotal |
+| P5 | 20% off $100+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $100 | 20% off subtotal |
+| P3 | Free shipping (members) | FREE_SHIPPING | Shipping | shipping | `is_member = true` | shipping → $0 |
+| P7 | Free shipping $100+ | FREE_SHIPPING | Shipping | shipping | subtotal ≥ $100 | shipping → $0 |
 
 ## Phases
 
@@ -38,6 +39,7 @@ Prices are integer cents, not decimal dollars — avoids floating-point rounding
 
 ### How exclusivity works
 
-Derived structurally from phase cardinality, no manual tagging: at most one Item-phase promo per line item (P1/P6 conflict — same Coffee Beans lines; P4 doesn't, since nothing else targets `BREW-V60`), at most one Cart-phase promo (P2/P5), at most one Shipping-phase promo. Can't express a cross-cutting exclusion unrelated to target overlap — not needed today.
+Derived structurally from phase cardinality, no manual tagging: at most one Item-phase promo per line item (P1/P6 conflict — same Coffee Beans lines; P4 doesn't, since nothing else targets `BREW-V60`), at most one Cart-phase promo (P2/P5), at most one Shipping-phase promo (P3/P7). Can't express a cross-cutting exclusion unrelated to target overlap — not needed today.
+
 
 
