@@ -35,3 +35,4 @@ High-level component breakdown. Backend is the focus; frontend stays minimal.
 - Multi-currency, tax, real shipping rates
 - Real checkout flow (payment, orders)
 - User-attribute-based promotion conditions (e.g. an `is_member` flag) — simplification for now; every condition is cart/item-derived
+- Promotion expiration/usage limits — expiration dates, one-time-use vs. N-uses vs. unlimited-in-period. Undecided, needs its own decision; today's promotions are always-available with no usage tracking
