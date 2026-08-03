@@ -30,17 +30,19 @@ Given that, the old design's branch-and-bound with a subadditivity-assumption bo
 - **Tie-break** (deterministic, required for repeatability): fewest promotions applied, then lexicographically smallest set of promotion IDs.
 - **Algorithm**: exhaustive cartesian product over every cluster's outcomes, across all three phases. Reuses the core engine's existing phase cascade unchanged.
 - **Fallback for pathological catalogs**: if the cluster-product size exceeds a fixed cap, fall back to the default engine's single result and return `optimal: false`. Replaces the old node-budget/anytime-best-so-far machinery — this only matters for catalogs far larger than anything seeded today, and a hard cap is simpler to reason about than a search budget.
+- **Runtime sanity check** (second, independent fallback trigger): both engines run on every request. The optimized result is only returned if `0 < optimized_total ≤ naive_total`; otherwise fall back to the naive result with `optimal: false`, same as the cap fallback. This turns "optimizer total ≤ default engine total" from an offline property test into a live guard against any bug the test suite didn't catch — belt and suspenders, not redundant with the test.
 - **Legality model**: phase cardinality, not pairwise conflict graphs (docs/seed-promotions.md) — this is what makes clustering possible in the first place.
 
 ## API surface
 
-`POST /price` gains an opt-in flag (e.g. `optimize: true`). Response adds `optimal: bool` and the chosen promotion set; itemization and explanation are unchanged in shape.
+`POST /price` always computes both engines (docs/core-engine-spec.md) — no opt-in flag needed. Response includes `optimal: bool` (false whenever either fallback trigger above fires) and the chosen promotion set; itemization and explanation are unchanged in shape.
 
 ## Acceptance criteria
 
 - Oracle test: for hand-picked carts (e.g. the P4/P2 scenario), the cluster-product result matches a hand-computed optimum.
 - Property tests: optimizer total ≤ default engine total; result invariant to promotion input order; cluster partitioning is correct (two promotions share a cluster iff their targets can intersect on some cart).
 - Cap/fallback test: a synthetic catalog exceeding the cluster-product cap falls back cleanly with `optimal: false`.
+- Runtime sanity-check test: a forced-bad optimizer result (worse than or equal to zero, or worse than naive) falls back to naive with `optimal: false` rather than being returned.
 - All core invariants (never negative, no double-application, itemization sums to total) pass unchanged through the optimizer path.
 
 ## Non-goals
