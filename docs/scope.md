@@ -36,4 +36,4 @@ High-level component breakdown. Backend is the focus; frontend stays minimal.
 - Real checkout flow (payment, orders)
 - User-attribute-based promotion conditions (e.g. an `is_member` flag) — simplification for now; every condition is cart/item-derived
 - Promotion expiration/usage limits — expiration dates, one-time-use vs. N-uses vs. unlimited-in-period. Undecided, needs its own decision; today's promotions are always-available with no usage tracking
-- Cloud deployment — optional bonus per BRIEF.md (issue #6), not attempted until Core is done and stable
+- Cloud deployment — optional bonus per BRIEF.md (issue #6), not attempted until Core is done and stable. Decided: Railway, two separate services (backend, frontend) under one Railway project, infra as code via a checked-in `railway.toml` — not configured by hand through the dashboard
