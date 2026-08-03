@@ -39,7 +39,7 @@ Prices are integer cents, not decimal dollars — avoids floating-point rounding
 
 ### How exclusivity works
 
-Derived structurally from phase cardinality, no manual tagging: at most one Item-phase promo per line item (P1/P6 conflict — same Coffee Beans lines; P4 doesn't, since nothing else targets `BREW-V60`), at most one Cart-phase promo (P2/P5), at most one Shipping-phase promo (P3/P7). Can't express a cross-cutting exclusion unrelated to target overlap — not needed today.
+Derived structurally from phase cardinality: at most one Item-phase promo per line item (P1/P6 conflict — same Coffee Beans lines; P4 doesn't, since nothing else targets `BREW-V60`), at most one Cart-phase promo (P2/P5), at most one Shipping-phase promo (P3/P7). Can't express a cross-cutting exclusion unrelated to target overlap — not needed today.
 
 
 
