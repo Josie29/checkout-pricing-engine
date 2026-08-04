@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchCatalog, fetchPromotions, postPrice } from './api'
+import { ApiError, fetchCatalog, fetchPromotions, postPrice } from './api'
 import type {
   CartItemInput,
   CatalogItem,
@@ -26,6 +26,8 @@ interface PricedResult {
 /** A failed `POST /price`, tagged with its inputs like `PricedResult`. */
 interface PriceFailure {
   message: string
+  /** HTTP status of the failure; null for network-level errors. */
+  status: number | null
   cartItems: CartItemInput[]
   claimedIds: string[]
 }
@@ -46,11 +48,16 @@ function App() {
   const [priced, setPriced] = useState<PricedResult | null>(null)
   const [failure, setFailure] = useState<PriceFailure | null>(null)
 
+  // Bumping either nonce re-runs the matching fetch effect — the retry
+  // buttons' only job.
+  const [seedAttempt, setSeedAttempt] = useState(0)
+  const [priceAttempt, setPriceAttempt] = useState(0)
+
   // Monotonic sequence guarding against out-of-order responses: only the
   // newest in-flight request may commit its result.
   const priceRequestSeq = useRef(0)
 
-  // Load the seeded catalog and promotion list once on mount.
+  // Load the seeded catalog and promotion list on mount (and on retry).
   useEffect(() => {
     let cancelled = false
     Promise.all([fetchCatalog(), fetchPromotions()])
@@ -68,7 +75,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [seedAttempt])
 
   // Reprice on every cart edit or promotion toggle: one debounced
   // POST /price per change; stale responses are aborted and ignored.
@@ -97,6 +104,7 @@ function App() {
           }
           setFailure({
             message: error instanceof Error ? error.message : String(error),
+            status: error instanceof ApiError ? error.status : null,
             cartItems,
             claimedIds,
           })
@@ -106,7 +114,7 @@ function App() {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [cartItems, claimedIds])
+  }, [cartItems, claimedIds, priceAttempt])
 
   const addCatalogItem = (item: CatalogItem) => {
     setCartItems((items) => {
@@ -158,6 +166,20 @@ function App() {
     )
   }
 
+  const retrySeed = () => {
+    // Clearing the error returns the page to its loading state while the
+    // re-fired fetches are in flight.
+    setSeedError(null)
+    setSeedAttempt((attempt) => attempt + 1)
+  }
+
+  const retryPrice = () => {
+    // Clearing the failure returns the panel to its pending state while the
+    // re-fired request is in flight.
+    setFailure(null)
+    setPriceAttempt((attempt) => attempt + 1)
+  }
+
   const cartEmpty = cartItems.length === 0
   const priceCurrent =
     priced !== null &&
@@ -173,9 +195,14 @@ function App() {
     <main className="app">
       <h1>Checkout Pricing Engine</h1>
       {seedError !== null ? (
-        <p className="error" role="alert">
-          Something went wrong loading the catalog and promotions: {seedError}
-        </p>
+        <div role="alert">
+          <p className="error">
+            Something went wrong loading the catalog and promotions: {seedError}
+          </p>
+          <button type="button" onClick={retrySeed}>
+            Retry
+          </button>
+        </div>
       ) : catalog === null || promotions === null ? (
         <p className="muted" role="status">
           Loading&hellip;
@@ -206,7 +233,12 @@ function App() {
               price={priced?.response ?? null}
               cartEmpty={cartEmpty}
               loading={priceLoading}
-              error={failureCurrent ? failure.message : null}
+              failure={
+                failureCurrent
+                  ? { message: failure.message, status: failure.status }
+                  : null
+              }
+              onRetry={retryPrice}
             />
           </div>
         </div>

@@ -24,6 +24,30 @@ export class ApiError extends Error {
 }
 
 /**
+ * Render a FastAPI `detail` field as a human-readable sentence. Plain-string
+ * details pass through; Pydantic validation arrays become their joined `msg`
+ * texts instead of raw JSON.
+ *
+ * @param detail - The `detail` value from an error response body.
+ * @returns A readable message for the error region.
+ */
+function formatDetail(detail: unknown): string {
+  if (typeof detail === 'string') {
+    return detail
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((entry: unknown) =>
+        entry !== null && typeof entry === 'object' && 'msg' in entry
+          ? String((entry as { msg: unknown }).msg)
+          : JSON.stringify(entry),
+      )
+      .join('; ')
+  }
+  return JSON.stringify(detail)
+}
+
+/**
  * Perform one API request and parse the JSON body.
  *
  * @param path - Path relative to the API base URL (e.g. `/price`).
@@ -38,7 +62,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const body: unknown = await response.json()
       if (body !== null && typeof body === 'object' && 'detail' in body) {
-        detail = JSON.stringify((body as { detail: unknown }).detail)
+        detail = formatDetail((body as { detail: unknown }).detail)
       }
     } catch {
       // Non-JSON error body — keep the generic status message.
