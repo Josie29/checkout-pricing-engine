@@ -20,6 +20,17 @@ class EngineConfig(BaseModel):
     destination — carrier/address-based rates are deferred.
     """
 
+    cluster_product_cap: int = Field(default=512, ge=1)
+    """Max cluster-outcome combinations the optimizer (#25) will enumerate.
+
+    The search space is the product of (cluster size + 1) across all
+    clusters (docs/optimizer-spec.md); past this cap the optimizer skips
+    the search and returns the naive result with `optimal: false`. 512 is
+    ~14x today's seed-set space of 36 (nine independent binary clusters'
+    worth), while bounding worst-case work to 512 cascade evaluations —
+    comfortably sub-second.
+    """
+
 
 class PromotionStatus(StrEnum):
     """Per-request promotion status (docs/core-engine-spec.md's table)."""

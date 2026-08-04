@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.catalog import CatalogItem
 from app.domain import Adjustment, Cart, Phase, PricedLine
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
+from app.optimizer import optimize
 from app.promotions import PROMOTION_REGISTRY, Promotion, PromotionTarget
 from app.seeds import load_seed_catalog, load_seed_promotions
 
@@ -129,16 +130,23 @@ def health() -> dict[str, str]:
 
 @app.post("/price")
 def price(request: PriceRequest) -> PriceResponse:
-    """Price a cart with the naive engine against the seeded promotions.
+    """Price a cart with both engines, returning the sanity-checked best.
+
+    Every request computes the naive engine and the optimizer
+    (docs/optimizer-spec.md's API surface — no opt-in flag). The runtime
+    sanity check gates the optimized result: it is returned only if
+    `0 < optimized_total <= naive_total`; otherwise (or when the optimizer
+    already fell back on its cluster-product cap) the naive outcome is
+    returned with `optimal: False`. Statuses reflect whichever result is
+    returned; a claimed promotion the optimizer withheld stays `claimed`.
 
     Args:
         request: The cart and the ids of the promotions the shopper toggled
             on.
 
     Returns:
-        The itemized result, explanation trace, totals, and one status per
-        seeded promotion. `optimal` stays False until the optimizer (#25)
-        lands.
+        The itemized result, explanation trace, totals, `optimal`, and one
+        status per seeded promotion.
 
     Raises:
         HTTPException: 422 if a claimed id names no seeded promotion.
@@ -146,11 +154,19 @@ def price(request: PriceRequest) -> PriceResponse:
             bug, surfaced as a 500 rather than mapped to a client error.
     """
     try:
-        outcome = price_naive(request.cart, PROMOTIONS, request.claimed_promotion_ids)
+        naive = price_naive(request.cart, PROMOTIONS, request.claimed_promotion_ids)
+        optimized = optimize(request.cart, PROMOTIONS, request.claimed_promotion_ids)
     except EngineInvariantError:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # Runtime sanity check (docs/optimizer-spec.md): a live guard, not just
+    # an offline property test. A legitimately-zero optimized total also
+    # falls back — naive would be zero too, so nothing is lost.
+    if 0 < optimized.result.total_cents <= naive.result.total_cents:
+        outcome = optimized
+    else:
+        outcome = naive
     result = outcome.result
     return PriceResponse(
         lines=result.lines,
