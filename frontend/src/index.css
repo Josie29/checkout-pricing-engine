@@ -125,6 +125,41 @@ button:disabled {
   aspect-ratio: 1;
 }
 
+/* Deals banner — read-only cart/shipping promotion signage above the
+   catalog; promotions themselves apply on the checkout page. */
+.deals-banner {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+}
+
+.deals-banner-hint {
+  display: block;
+  color: var(--color-text-muted);
+}
+
+/* Per-product deal chips — small secondary signage; wrap on narrow cards. */
+.deal-chips {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.deal-chip {
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  background-color: var(--color-surface);
+}
+
 /* Catalog */
 .catalog-list {
   list-style: none;
