@@ -5,6 +5,8 @@ from typing import ClassVar
 import pytest
 from pydantic import BaseModel
 
+# Imported for its side effect: registers the five seeded kinds.
+import app.promotion_kinds  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from app.domain import Adjustment, Cart, LineAllocation, LineItem, Phase
 from app.promotions import (
     PROMOTION_REGISTRY,
@@ -117,6 +119,85 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         # Boundary pair: exactly at min_qty vs. one unit below it.
         eligible_cart=Cart(items=[make_line_item(qty=2)]),
         ineligible_cart=Cart(items=[make_line_item(qty=1)]),
+    ),
+    "BXGY": KindContractFixture(
+        seed_entry={
+            "type": "BXGY",
+            "id": "P1",
+            "name": "Beans: buy 2 get 1 free",
+            "target": {"kind": "category", "category": "Coffee Beans"},
+            "min_qty": 3,
+        },
+        # Boundary pair: qty 3 (summed across two bean lines) vs. qty 2.
+        eligible_cart=Cart(
+            items=[
+                make_line_item(qty=2),
+                make_line_item(sku="COF-COL", unit_price_cents=1400),
+            ]
+        ),
+        ineligible_cart=Cart(items=[make_line_item(qty=2)]),
+    ),
+    "PCT_OFF_ITEM": KindContractFixture(
+        seed_entry={
+            "type": "PCT_OFF_ITEM",
+            "id": "P6",
+            "name": "Beans: bulk 20% off",
+            "target": {"kind": "category", "category": "Coffee Beans"},
+            "min_qty": 3,
+            "percent_off": 20,
+        },
+        # Boundary pair: exactly at min_qty vs. one unit below it.
+        eligible_cart=Cart(items=[make_line_item(qty=3)]),
+        ineligible_cart=Cart(items=[make_line_item(qty=2)]),
+    ),
+    "FIXED_OFF_ITEM": KindContractFixture(
+        seed_entry={
+            "type": "FIXED_OFF_ITEM",
+            "id": "P4",
+            "name": "$5 off pour-over dripper",
+            "target": {"kind": "sku", "sku": "BREW-V60"},
+            "amount_off_cents": 500,
+        },
+        # No authored condition: the boundary is target presence vs. absence.
+        eligible_cart=Cart(
+            items=[
+                make_line_item(
+                    sku="BREW-V60", category="Brew Gear", unit_price_cents=2800
+                )
+            ]
+        ),
+        ineligible_cart=Cart(
+            items=[
+                make_line_item(
+                    sku="MUG-CLS", category="Drinkware", unit_price_cents=1200
+                )
+            ]
+        ),
+    ),
+    "PCT_OFF_CART": KindContractFixture(
+        seed_entry={
+            "type": "PCT_OFF_CART",
+            "id": "P2",
+            "name": "15% off $50+",
+            "target": {"kind": "cart"},
+            "min_subtotal_cents": 5000,
+            "percent_off": 15,
+        },
+        # Boundary pair: subtotal exactly 5000 vs. 4999 cents.
+        eligible_cart=Cart(items=[make_line_item(unit_price_cents=2500, qty=2)]),
+        ineligible_cart=Cart(items=[make_line_item(unit_price_cents=4999)]),
+    ),
+    "FREE_SHIPPING": KindContractFixture(
+        seed_entry={
+            "type": "FREE_SHIPPING",
+            "id": "P7",
+            "name": "Free shipping $100+",
+            "target": {"kind": "shipping"},
+            "min_subtotal_cents": 10000,
+        },
+        # Boundary pair: subtotal exactly 10000 vs. 9999 cents.
+        eligible_cart=Cart(items=[make_line_item(unit_price_cents=2500, qty=4)]),
+        ineligible_cart=Cart(items=[make_line_item(unit_price_cents=9999)]),
     ),
 }
 

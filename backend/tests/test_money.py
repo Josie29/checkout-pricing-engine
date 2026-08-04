@@ -2,7 +2,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from app.money import allocate_proportionally
+from app.money import allocate_proportionally, percent_of_cents
 
 
 def test_even_three_way_split_sums_exactly() -> None:
@@ -94,6 +94,48 @@ def test_invalid_inputs_raise(amount: int, weights: list[int]) -> None:
     """
     with pytest.raises(ValueError):
         allocate_proportionally(amount, weights)
+
+
+@pytest.mark.parametrize(
+    ("base", "percent", "expected"),
+    [
+        (1000, 20, 200),  # exact: no rounding involved
+        (30, 15, 5),  # 4.5 rounds half-up to 5
+        (1002, 20, 200),  # 200.4 rounds down
+        (1003, 20, 201),  # 200.6 rounds up
+        (999, 0, 0),  # 0% of anything is 0
+        (999, 100, 999),  # 100% is the full base
+        (0, 50, 0),  # empty base
+    ],
+)
+def test_percent_of_cents_rounds_half_up(
+    base: int, percent: int, expected: int
+) -> None:
+    """Percentages round half-up at the cent, exactly once.
+
+    Catches the documented rounding rule regressing (e.g. to truncation or
+    bankers') — a shopper owed 4.5 cents of discount must see 5, and exact
+    percentages must never gain or lose a cent.
+    """
+    assert percent_of_cents(base, percent) == expected
+
+
+@pytest.mark.parametrize(
+    ("base", "percent"),
+    [
+        (-1, 20),  # negative base
+        (100, -1),  # negative percent
+        (100, 101),  # percent over 100
+    ],
+)
+def test_percent_of_cents_invalid_inputs_raise(base: int, percent: int) -> None:
+    """Out-of-domain percentage inputs are rejected up front.
+
+    Catches a negative or >100% "discount" silently producing a charge or
+    an over-discount instead of failing loud at the source.
+    """
+    with pytest.raises(ValueError):
+        percent_of_cents(base, percent)
 
 
 @given(

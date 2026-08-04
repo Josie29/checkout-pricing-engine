@@ -1,0 +1,47 @@
+[
+  {
+    "type": "BXGY",
+    "id": "P1",
+    "name": "Beans: buy 2 get 1 free",
+    "target": {"kind": "category", "category": "Coffee Beans"},
+    "min_qty": 3
+  },
+  {
+    "type": "PCT_OFF_ITEM",
+    "id": "P6",
+    "name": "Beans: bulk 20% off",
+    "target": {"kind": "category", "category": "Coffee Beans"},
+    "min_qty": 3,
+    "percent_off": 20
+  },
+  {
+    "type": "FIXED_OFF_ITEM",
+    "id": "P4",
+    "name": "$5 off pour-over dripper",
+    "target": {"kind": "sku", "sku": "BREW-V60"},
+    "amount_off_cents": 500
+  },
+  {
+    "type": "PCT_OFF_CART",
+    "id": "P2",
+    "name": "15% off $50+",
+    "target": {"kind": "cart"},
+    "min_subtotal_cents": 5000,
+    "percent_off": 15
+  },
+  {
+    "type": "PCT_OFF_CART",
+    "id": "P5",
+    "name": "20% off $100+",
+    "target": {"kind": "cart"},
+    "min_subtotal_cents": 10000,
+    "percent_off": 20
+  },
+  {
+    "type": "FREE_SHIPPING",
+    "id": "P7",
+    "name": "Free shipping $100+",
+    "target": {"kind": "shipping"},
+    "min_subtotal_cents": 10000
+  }
+]

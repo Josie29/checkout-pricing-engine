@@ -1,6 +1,41 @@
 from collections.abc import Sequence
 
 
+def percent_of_cents(base_cents: int, percent: int) -> int:
+    """Whole-number percentage of an integer-cent amount, rounded half-up.
+
+    The project-wide percentage rounding rule: a percentage discount is
+    computed exactly once, at the promotion's aggregate base (the matched
+    subtotal), rounded half-up to the cent (0.5 rounds away from zero, so
+    20% of 1002 = 200.4 -> 200 and 15% of 30 = 4.5 -> 5). Per-line amounts
+    then come from `allocate_proportionally`, never from re-rounding
+    percentages per line — one rounding site keeps the split deterministic
+    and drift-free.
+
+    Half-up over bankers' rounding: it matches what a shopper computes by
+    hand, and at the half-cent it favors the customer on a discount.
+
+    Args:
+        base_cents: Non-negative base amount in integer cents.
+        percent: Whole-number percentage, 0-100 inclusive. Fractional
+            percentages are deliberately unsupported — no seed needs them,
+            and floats never touch money.
+
+    Returns:
+        `percent`% of `base_cents`, rounded half-up to an integer cent.
+
+    Raises:
+        ValueError: If `base_cents` is negative or `percent` is outside
+            0-100.
+    """
+    if base_cents < 0:
+        raise ValueError("base_cents must be non-negative")
+    if not 0 <= percent <= 100:
+        raise ValueError("percent must be between 0 and 100 inclusive")
+    # +50 before floor-dividing by 100 implements round-half-up on the cent.
+    return (base_cents * percent + 50) // 100
+
+
 def allocate_proportionally(amount_cents: int, weights: Sequence[int]) -> list[int]:
     """Split an integer-cent amount across weights, summing exactly.
 
