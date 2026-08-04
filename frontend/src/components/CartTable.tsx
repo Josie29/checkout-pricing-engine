@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { CartItemInput } from '../types'
 import { centsToDollarInput, parseDollarsToCents } from '../format'
+import { ProductImage } from './ProductImage'
 
 interface CartTableProps {
   items: CartItemInput[]
@@ -78,7 +79,19 @@ export function CartTable({
           <tbody>
             {items.map((item) => (
               <tr key={item.sku}>
-                <td>{item.name ?? item.sku}</td>
+                <td>
+                  <div className="cart-item-cell">
+                    {/* Thumbnail is desktop-only (.cart-thumb) so the
+                        four-column table stays uncrowded on mobile. */}
+                    <ProductImage
+                      sku={item.sku}
+                      name={item.name ?? item.sku}
+                      variant="thumb"
+                      className="cart-thumb"
+                    />
+                    <span>{item.name ?? item.sku}</span>
+                  </div>
+                </td>
                 <td>
                   <PriceInput
                     // Remount on committed price so the draft resyncs.

@@ -75,6 +75,56 @@ button:disabled {
   }
 }
 
+/* Shop page: prominent checkout call-to-action under the cart. */
+.checkout-cta {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.checkout-button {
+  font-size: var(--font-size-base);
+  padding: var(--space-2) var(--space-4);
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+/* Checkout page: navigation back to the shop. */
+.back-link {
+  display: inline-block;
+  margin-bottom: var(--space-4);
+  color: var(--color-accent);
+}
+
+/* Product images — resolved from /products/<SKU>.jpg by convention; the
+   surface-colored wrapper doubles as the neutral placeholder when an image
+   is missing. Attribution: public/products/CREDITS.md. */
+.product-image {
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+}
+
+.product-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-image--card {
+  width: 5rem;
+  aspect-ratio: 4 / 3;
+}
+
+.product-image--thumb {
+  width: 2rem;
+  aspect-ratio: 1;
+}
+
 /* Catalog */
 .catalog-list {
   list-style: none;
@@ -97,6 +147,8 @@ button:disabled {
 .catalog-item-info {
   display: flex;
   flex-direction: column;
+  /* Fill the space between the image and the Add button. */
+  flex: 1;
 }
 
 .catalog-item-info .muted {
@@ -115,6 +167,24 @@ button:disabled {
   text-align: left;
   padding: var(--space-2) var(--space-2) var(--space-2) 0;
   border-bottom: 1px solid var(--color-border);
+}
+
+.cart-item-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Cart thumbnails are desktop-only: the four-column table is already tight
+   at mobile widths. */
+.cart-thumb {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .cart-thumb {
+    display: block;
+  }
 }
 
 .price-input {
@@ -141,6 +211,12 @@ button:disabled {
 }
 
 /* Promotions */
+.promotion-bulk-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
 .promotion-list {
   list-style: none;
   margin: 0;
