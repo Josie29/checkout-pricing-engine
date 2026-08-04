@@ -17,15 +17,220 @@ body {
 }
 
 .app {
+  max-width: 64rem;
+  margin: 0 auto;
   padding: var(--space-6) var(--space-4);
 }
 
 h1 {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-4);
   font-size: var(--font-size-xl);
 }
 
-.app p {
+h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-lg);
+}
+
+section {
+  margin-bottom: var(--space-6);
+}
+
+.muted {
   margin: 0;
   color: var(--color-text-muted);
+}
+
+.error {
+  margin: 0 0 var(--space-2);
+  color: var(--color-danger);
+}
+
+button {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Two columns from tablet width up: builder left, price panel right. */
+.layout {
+  display: grid;
+  gap: var(--space-6);
+}
+
+@media (min-width: 48rem) {
+  .layout {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+/* Catalog */
+.catalog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.catalog-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.catalog-item-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.catalog-item-info .muted {
+  font-size: var(--font-size-sm);
+}
+
+/* Cart */
+.cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.cart-table th,
+.cart-table td {
+  text-align: left;
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.price-input {
+  font: inherit;
+  width: 5rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.qty-stepper button {
+  padding: var(--space-1) var(--space-2);
+  line-height: 1;
+}
+
+.remove-button {
+  color: var(--color-danger);
+}
+
+/* Promotions */
+.promotion-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.promotion-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.promotion-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.status-badge {
+  font-size: var(--font-size-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.status-applied {
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.status-not-applied {
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+}
+
+/* Price panel */
+.price-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.price-table th {
+  text-align: left;
+  font-weight: normal;
+}
+
+.price-table th,
+.price-table td {
+  padding: var(--space-1) 0;
+}
+
+.price-table tfoot tr:first-child th,
+.price-table tfoot tr:first-child td {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.discount {
+  color: var(--color-success);
+}
+
+.line-discount {
+  font-size: var(--font-size-sm);
+  color: var(--color-success);
+}
+
+.total-row th,
+.total-row td {
+  font-weight: bold;
+  font-size: var(--font-size-lg);
+}
+
+/* Dimmed while a newer price is in flight or the last request failed. */
+.price-stale {
+  opacity: 0.5;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
