@@ -28,6 +28,12 @@
   --color-badge-bg: #e0a458;
   --color-badge-text: #2d2118;
 
+  /* Product cards (white pops against the cream page bg) */
+  --color-card: #ffffff;
+  --shadow-card: 0 1px 3px rgba(62, 44, 34, 0.08);
+  --shadow-drawer: -0.5rem 0 2rem rgba(45, 33, 24, 0.25);
+  --color-scrim: rgba(45, 33, 24, 0.45);
+
   /* Typography */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
