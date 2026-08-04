@@ -10,7 +10,7 @@
 set -euo pipefail
 
 PROJECT_NAME="${PROJECT_NAME:-checkout-pricing-engine}"
-WORKSPACE="${WORKSPACE:-josie29's Projects}"
+WORKSPACE=${WORKSPACE:-"josie29's Projects"}
 ENVIRONMENT="${ENVIRONMENT:-production}"
 
 command -v railway >/dev/null || { echo "railway CLI not found — npm i -g @railway/cli"; exit 1; }
