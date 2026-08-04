@@ -1,11 +1,15 @@
-from collections.abc import Iterator
+import json
+import sqlite3
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import PROMOTION_STORE
+import app.main
 from app.main import app as fastapi_app
+from app.promotion_store import PromotionStore, PromotionStoreLoadError
+from app.seeds import PROMOTIONS_SEED_PATH, load_seed_promotions
 
 client = TestClient(fastapi_app)
 
@@ -23,14 +27,26 @@ _MUG_FIXED_OFF: dict[str, object] = {
 
 
 @pytest.fixture(autouse=True)
-def reset_store() -> Iterator[None]:
-    """Drop runtime additions after each test, restoring the boot state.
+def db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the app at a fresh store backed by a temp-directory SQLite file.
 
-    The store is module-level app state; without this, one test's POSTed
-    promotions would leak into the next test's GET /promotions and pricing.
+    Swaps `app.main.PROMOTION_STORE` (the routes read the module global on
+    every request) for a seeds-only store whose database lives under
+    pytest's `tmp_path`, so each test starts from the boot state, nothing
+    leaks between tests, and no test ever writes `backend/data/` into the
+    repo tree. Persistence tests build a second store on the returned path
+    to simulate a restart.
     """
-    yield
-    PROMOTION_STORE.clear_additions()
+    path = tmp_path / "promotions.db"
+    monkeypatch.setattr(
+        app.main, "PROMOTION_STORE", PromotionStore(load_seed_promotions(), path)
+    )
+    return path
+
+
+def _restarted_store(path: Path) -> PromotionStore:
+    """Build a second store on the same database, as a process restart would."""
+    return PromotionStore(load_seed_promotions(), path)
 
 
 def _price(cart_items: list[dict[str, object]], claimed: list[str]) -> httpx.Response:
@@ -42,7 +58,7 @@ def _price(cart_items: list[dict[str, object]], claimed: list[str]) -> httpx.Res
 
 
 class TestAddPromotion:
-    """POST /promotions — issue #68's runtime, in-memory admin API."""
+    """POST /promotions — issue #68's runtime admin API."""
 
     def test_add_then_price_end_to_end(self) -> None:
         """Catches an added promotion not reaching the pricing engine.
@@ -215,3 +231,95 @@ class TestPromotionsOrdering:
         listed = client.get("/promotions").json()
         assert [promo["id"] for promo in listed] == [*SEED_IDS, "A1", "A2"]
         assert listed[-2:] == [first.json(), second.json()]
+
+
+_CART_PCT_OFF: dict[str, object] = {
+    "type": "PCT_OFF_CART",
+    "id": "A2",
+    "name": "5% off $20+",
+    "target": {"kind": "cart"},
+    "min_subtotal_cents": 2000,
+    "percent_off": 5,
+}
+
+_DB_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS promotions"
+    " (id TEXT PRIMARY KEY, entry TEXT NOT NULL, created_at TEXT NOT NULL)"
+)
+
+
+def _insert_row(path: Path, row_id: str, entry_text: str) -> None:
+    """Write one raw row straight into the SQLite file, bypassing the store."""
+    conn = sqlite3.connect(path)
+    try:
+        with conn:  # commit on success
+            conn.execute(_DB_SCHEMA)
+            conn.execute(
+                "INSERT INTO promotions (id, entry, created_at) VALUES (?, ?, ?)",
+                (row_id, entry_text, "2026-01-01T00:00:00+00:00"),
+            )
+    finally:
+        conn.close()
+
+
+class TestPersistence:
+    """Issue #75 — runtime additions survive a restart via SQLite."""
+
+    def test_added_promotion_survives_restart(self, db_path: Path) -> None:
+        """Catches an accepted promotion silently vanishing on restart.
+
+        The whole point of #75: after a 201, a fresh store on the same
+        database (a process restart) must still list the addition — with
+        the same parsed shape the live store held.
+        """
+        assert client.post("/promotions", json=_MUG_FIXED_OFF).status_code == 201
+        reloaded = _restarted_store(db_path)
+        assert [promo.id for promo in reloaded.all()] == [*SEED_IDS, "A1"]
+        assert reloaded.all()[-1] == app.main.PROMOTION_STORE.all()[-1]
+
+    def test_reload_preserves_insertion_order(self, db_path: Path) -> None:
+        """Catches a reload reordering additions (and the engine tie-break).
+
+        Insertion order is the naive engine's cluster tie-break, so a
+        restart must replay additions in the order they were POSTed, after
+        every seed.
+        """
+        assert client.post("/promotions", json=_MUG_FIXED_OFF).status_code == 201
+        assert client.post("/promotions", json=_CART_PCT_OFF).status_code == 201
+        reloaded = _restarted_store(db_path)
+        assert [promo.id for promo in reloaded.all()] == [*SEED_IDS, "A1", "A2"]
+
+    def test_clear_additions_deletes_persisted_rows(self, db_path: Path) -> None:
+        """Catches the test hook resetting memory but not disk.
+
+        If `clear_additions()` left rows behind, a later "restart" would
+        resurrect promotions a test believed cleared — cross-test leakage
+        through the filesystem.
+        """
+        assert client.post("/promotions", json=_MUG_FIXED_OFF).status_code == 201
+        app.main.PROMOTION_STORE.clear_additions()
+        assert [promo.id for promo in _restarted_store(db_path).all()] == SEED_IDS
+
+    def test_garbage_stored_row_fails_load_naming_id(self, db_path: Path) -> None:
+        """Catches corrupt rows being skipped instead of failing loud.
+
+        A stored row that no longer parses is schema drift or corruption;
+        silently dropping it would price carts against a promotion set the
+        admin believes still exists. Boot must raise and name the row.
+        """
+        _insert_row(db_path, "BAD1", "{not json")
+        with pytest.raises(PromotionStoreLoadError, match="BAD1"):
+            _restarted_store(db_path)
+
+    def test_stored_row_colliding_with_seed_fails_load(self, db_path: Path) -> None:
+        """Catches a persisted addition shadowing a seed after a seed edit.
+
+        A row whose id now matches a seed breaks the engine's unique-id
+        precondition; boot must refuse the whole store, naming the id,
+        rather than pick a winner.
+        """
+        seed_entry = json.loads(PROMOTIONS_SEED_PATH.read_text(encoding="utf-8"))[0]
+        assert seed_entry["id"] == "P1"
+        _insert_row(db_path, "P1", json.dumps(seed_entry))
+        with pytest.raises(PromotionStoreLoadError, match="P1"):
+            _restarted_store(db_path)

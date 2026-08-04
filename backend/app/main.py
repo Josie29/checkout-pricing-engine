@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,11 +14,29 @@ from app.promotions import PROMOTION_REGISTRY, Promotion, PromotionTarget
 from app.seed_loader import SeedLoadError, parse_promotions
 from app.seeds import load_seed_catalog, load_seed_promotions
 
+
+def _resolve_promotions_db_path() -> Path:
+    """Resolve where runtime promotion additions persist (issue #75).
+
+    Returns:
+        The `PROMOTIONS_DB_PATH` environment variable if set, else
+        `data/promotions.db` under `backend/` (this file's grandparent).
+        The file need not exist yet — the store creates it on first write.
+    """
+    env_path = os.environ.get("PROMOTIONS_DB_PATH", "").strip()
+    if env_path:
+        return Path(env_path)
+    return Path(__file__).resolve().parent.parent / "data" / "promotions.db"
+
+
 # Seed data is loaded once at import time (the app has no lifespan hooks);
 # requests never re-read the seed files. `POST /promotions` appends runtime
-# additions to the store; they are in-memory only and vanish on restart —
-# deliberate, this project has no database (docs/scope.md).
-PROMOTION_STORE = PromotionStore(load_seed_promotions())
+# additions to the store, which persists them to SQLite (issue #75) and
+# replays them at boot — seeds themselves stay file-based, and there is
+# still no database for the catalog or carts (docs/scope.md).
+PROMOTION_STORE = PromotionStore(
+    load_seed_promotions(), db_path=_resolve_promotions_db_path()
+)
 CATALOG: list[CatalogItem] = load_seed_catalog()
 
 app = FastAPI(title="Pricing Engine")
@@ -205,8 +224,8 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
     `app/seeds/promotions.json` entry: a `type` registry key, `id`, `name`,
     `target`, and the kind's own fields. It is validated through the seed
     loader, so every seed rule applies (registered kind, correctly-scoped
-    target, kind field constraints). The addition is in-memory only and is
-    gone after a restart (docs/scope.md defers persistence); `POST /price`
+    target, kind field constraints). The addition is persisted to the
+    store's SQLite file (issue #75) and survives restarts; `POST /price`
     picks it up immediately with no engine changes, since clusters and the
     optimizer derive everything from the promotion list.
 
@@ -226,7 +245,7 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
     except SeedLoadError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
-        PROMOTION_STORE.add(promotion)
+        PROMOTION_STORE.add(promotion, entry)
     except DuplicatePromotionIdError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _promotion_info(promotion)
