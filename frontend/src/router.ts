@@ -1,16 +1,17 @@
 /**
- * Hand-rolled history-API routing — no router dependency. Two routes:
- * the shop (`/`) and the checkout (`/checkout`); unknown paths fall back
- * to the shop.
+ * Hand-rolled history-API routing — no router dependency. Three routes:
+ * the shop (`/`), the checkout (`/checkout`), and the promotion-authoring
+ * admin page (`/admin`); unknown paths fall back to the shop.
  */
 import { useCallback, useEffect, useState } from 'react'
 
-export type Route = 'shop' | 'checkout'
+export type Route = 'shop' | 'checkout' | 'admin'
 
 /** Path each route is pushed to the history as. */
 export const ROUTE_PATHS: Record<Route, string> = {
   shop: '/',
   checkout: '/checkout',
+  admin: '/admin',
 }
 
 /**
@@ -20,7 +21,13 @@ export const ROUTE_PATHS: Record<Route, string> = {
  * @returns The matching route.
  */
 export function pathToRoute(pathname: string): Route {
-  return pathname === ROUTE_PATHS.checkout ? 'checkout' : 'shop'
+  if (pathname === ROUTE_PATHS.checkout) {
+    return 'checkout'
+  }
+  if (pathname === ROUTE_PATHS.admin) {
+    return 'admin'
+  }
+  return 'shop'
 }
 
 /**

@@ -4,6 +4,7 @@ import type { CartItemInput, CatalogItem, PromotionInfo } from './types'
 import { useRoute } from './router'
 import { ShopPage } from './pages/ShopPage'
 import { CheckoutPage } from './pages/CheckoutPage'
+import { AdminPage } from './pages/AdminPage'
 import { CartButton } from './components/CartButton'
 
 /**
@@ -102,6 +103,15 @@ function App() {
     setClaimedIds(ids)
   }
 
+  const addPromotion = (promotion: PromotionInfo) => {
+    // Append the 201 body — GET /promotions lists seeds then additions, so
+    // this matches what a refetch would return. Shop signage and checkout
+    // toggles read this state, so the new promotion appears immediately.
+    setPromotions((existing) =>
+      existing === null ? [promotion] : [...existing, promotion],
+    )
+  }
+
   const retrySeed = () => {
     // Clearing the error returns the page to its loading state while the
     // re-fired fetches are in flight.
@@ -120,6 +130,16 @@ function App() {
             <h1 className="wordmark">Roast &amp; Co</h1>
             <p className="tagline">coffee &amp; kitchenware</p>
           </div>
+          <a
+            href="/admin"
+            className="admin-link"
+            onClick={(event) => {
+              event.preventDefault()
+              navigate('admin')
+            }}
+          >
+            Admin
+          </a>
           <CartButton count={cartCount} onClick={() => navigate('checkout')} />
         </div>
       </header>
@@ -138,6 +158,12 @@ function App() {
           <p className="muted" role="status">
             Loading&hellip;
           </p>
+        ) : route === 'admin' ? (
+          <AdminPage
+            catalog={catalog}
+            onCreated={addPromotion}
+            onBackToShop={() => navigate('shop')}
+          />
         ) : route === 'checkout' ? (
           <CheckoutPage
             promotions={promotions}

@@ -6,6 +6,7 @@ import type {
   CatalogItem,
   PriceRequest,
   PriceResponse,
+  PromotionCreateRequest,
   PromotionInfo,
 } from './types'
 
@@ -90,6 +91,25 @@ export function fetchCatalog(): Promise<CatalogItem[]> {
  */
 export function fetchPromotions(): Promise<PromotionInfo[]> {
   return request<PromotionInfo[]>('/promotions')
+}
+
+/**
+ * Add one promotion at runtime (the unauthenticated admin page). The body is
+ * a seed-entry object; the server validates it and stores it in memory only.
+ *
+ * @param entry - The seed-entry body for the new promotion.
+ * @returns The stored promotion in the `GET /promotions` item shape.
+ * @throws {ApiError} On any non-2xx response (422 for duplicate ids, unknown
+ *   types, mis-scoped targets, or invalid fields, with the server's detail).
+ */
+export function createPromotion(
+  entry: PromotionCreateRequest,
+): Promise<PromotionInfo> {
+  return request<PromotionInfo>('/promotions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  })
 }
 
 /**
