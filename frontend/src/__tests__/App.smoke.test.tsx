@@ -141,6 +141,9 @@ test('shop builds the cart and checkout renders the priced response', async () =
     fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/price')),
   ).toHaveLength(0)
 
+  // The header cart badge counts the three adds live (a count, not money).
+  expect(screen.getByRole('button', { name: 'Cart, 3 items' })).toBeDefined()
+
   // Go to checkout: the debounced POST /price fires on arrival and the
   // canned base total renders.
   fireEvent.click(screen.getByRole('button', { name: 'Go to checkout' }))

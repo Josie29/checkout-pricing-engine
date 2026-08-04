@@ -4,6 +4,8 @@ import type { CartItemInput, CatalogItem, PromotionInfo } from './types'
 import { useRoute } from './router'
 import { ShopPage } from './pages/ShopPage'
 import { CheckoutPage } from './pages/CheckoutPage'
+import { AdminPage } from './pages/AdminPage'
+import { CartButton } from './components/CartButton'
 
 /**
  * Two-page pricing UI: the shop (`/`) builds the cart without ever pricing;
@@ -101,6 +103,15 @@ function App() {
     setClaimedIds(ids)
   }
 
+  const addPromotion = (promotion: PromotionInfo) => {
+    // Append the 201 body — GET /promotions lists seeds then additions, so
+    // this matches what a refetch would return. Shop signage and checkout
+    // toggles read this state, so the new promotion appears immediately.
+    setPromotions((existing) =>
+      existing === null ? [promotion] : [...existing, promotion],
+    )
+  }
+
   const retrySeed = () => {
     // Clearing the error returns the page to its loading state while the
     // re-fired fetches are in flight.
@@ -108,44 +119,74 @@ function App() {
     setSeedAttempt((attempt) => attempt + 1)
   }
 
+  // Header badge count: sum of cart quantities — a count, never money.
+  const cartCount = cartItems.reduce((sum, line) => sum + line.qty, 0)
+
   return (
-    <main className="app">
-      <h1>Checkout Pricing Engine</h1>
-      {seedError !== null ? (
-        <div role="alert">
-          <p className="error">
-            Something went wrong loading the catalog and promotions: {seedError}
-          </p>
-          <button type="button" onClick={retrySeed}>
-            Retry
-          </button>
+    <>
+      <header className="site-header">
+        <div className="site-header-inner">
+          <div className="brand">
+            <h1 className="wordmark">Roast &amp; Co</h1>
+            <p className="tagline">coffee &amp; kitchenware</p>
+          </div>
+          <a
+            href="/admin"
+            className="admin-link"
+            onClick={(event) => {
+              event.preventDefault()
+              navigate('admin')
+            }}
+          >
+            Admin
+          </a>
+          <CartButton count={cartCount} onClick={() => navigate('checkout')} />
         </div>
-      ) : catalog === null || promotions === null ? (
-        <p className="muted" role="status">
-          Loading&hellip;
-        </p>
-      ) : route === 'checkout' ? (
-        <CheckoutPage
-          promotions={promotions}
-          cartItems={cartItems}
-          claimedIds={claimedIds}
-          onToggle={togglePromotion}
-          onSetAllClaimed={setAllClaimed}
-          onBackToShop={() => navigate('shop')}
-        />
-      ) : (
-        <ShopPage
-          catalog={catalog}
-          promotions={promotions}
-          cartItems={cartItems}
-          onAdd={addCatalogItem}
-          onQtyStep={stepQty}
-          onPriceChange={changePrice}
-          onRemove={removeItem}
-          onCheckout={() => navigate('checkout')}
-        />
-      )}
-    </main>
+      </header>
+      <main className="app">
+        {seedError !== null ? (
+          <div role="alert">
+            <p className="error">
+              Something went wrong loading the catalog and promotions:{' '}
+              {seedError}
+            </p>
+            <button type="button" onClick={retrySeed}>
+              Retry
+            </button>
+          </div>
+        ) : catalog === null || promotions === null ? (
+          <p className="muted" role="status">
+            Loading&hellip;
+          </p>
+        ) : route === 'admin' ? (
+          <AdminPage
+            catalog={catalog}
+            onCreated={addPromotion}
+            onBackToShop={() => navigate('shop')}
+          />
+        ) : route === 'checkout' ? (
+          <CheckoutPage
+            promotions={promotions}
+            cartItems={cartItems}
+            claimedIds={claimedIds}
+            onToggle={togglePromotion}
+            onSetAllClaimed={setAllClaimed}
+            onBackToShop={() => navigate('shop')}
+          />
+        ) : (
+          <ShopPage
+            catalog={catalog}
+            promotions={promotions}
+            cartItems={cartItems}
+            onAdd={addCatalogItem}
+            onQtyStep={stepQty}
+            onPriceChange={changePrice}
+            onRemove={removeItem}
+            onCheckout={() => navigate('checkout')}
+          />
+        )}
+      </main>
+    </>
   )
 }
 

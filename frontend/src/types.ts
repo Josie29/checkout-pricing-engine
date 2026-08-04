@@ -76,6 +76,26 @@ export type PromotionTarget =
   | { kind: 'cart' }
   | { kind: 'shipping' }
 
+/** The five registered promotion kinds `POST /promotions` accepts. */
+export type PromotionKind =
+  'BXGY' | 'PCT_OFF_ITEM' | 'FIXED_OFF_ITEM' | 'PCT_OFF_CART' | 'FREE_SHIPPING'
+
+/**
+ * `POST /promotions` request body — one seed-entry object. The kind-specific
+ * fields are optional here because each type takes a different subset; the
+ * server validates the exact set (422 otherwise).
+ */
+export interface PromotionCreateRequest {
+  type: PromotionKind
+  id: string
+  name: string
+  target: PromotionTarget
+  min_qty?: number
+  percent_off?: number
+  amount_off_cents?: number
+  min_subtotal_cents?: number
+}
+
 /** One `GET /promotions` entry, in seed order. */
 export interface PromotionInfo {
   id: string
