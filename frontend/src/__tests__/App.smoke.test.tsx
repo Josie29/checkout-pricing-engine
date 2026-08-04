@@ -1,9 +1,9 @@
 /*
  * The single frontend smoke test (docs/testing-strategy.md). Removing it
- * means nothing catches the bug where the wired-together page stops turning
- * cart edits and promotion toggles into a `POST /price` and rendering the
- * server's total and explanation — e.g. a broken fetch seam, a debounce
- * regression that never fires, or a panel that ignores the response.
+ * means nothing catches the bug where the two-page flow stops working
+ * end-to-end — e.g. the shop page failing to build a cart, "Go to checkout"
+ * not routing, the checkout page never firing its `POST /price`, or the
+ * panel ignoring the server's total and explanation.
  */
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -96,47 +96,54 @@ function jsonResponse(body: unknown): Response {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  // Reset the URL the router read so a rerun starts back on the shop page.
+  window.history.replaceState(null, '', '/')
 })
 
-test('cart edit and promotion toggle render the priced response', async () => {
+test('shop builds the cart and checkout renders the priced response', async () => {
   // Mock fetch at the api.ts seam: canned catalog/promotions, and a /price
   // that answers from the claimed promotion ids in the request body.
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/catalog')) {
-        return Promise.resolve(jsonResponse(CATALOG))
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.endsWith('/catalog')) {
+      return Promise.resolve(jsonResponse(CATALOG))
+    }
+    if (url.endsWith('/promotions')) {
+      return Promise.resolve(jsonResponse(PROMOTIONS))
+    }
+    if (url.endsWith('/price')) {
+      const body = JSON.parse(String(init?.body)) as {
+        claimed_promotion_ids: string[]
       }
-      if (url.endsWith('/promotions')) {
-        return Promise.resolve(jsonResponse(PROMOTIONS))
-      }
-      if (url.endsWith('/price')) {
-        const body = JSON.parse(String(init?.body)) as {
-          claimed_promotion_ids: string[]
-        }
-        return Promise.resolve(
-          jsonResponse(
-            body.claimed_promotion_ids.includes('P1')
-              ? DISCOUNTED_PRICE
-              : BASE_PRICE,
-          ),
-        )
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${url}`))
-    }),
-  )
+      return Promise.resolve(
+        jsonResponse(
+          body.claimed_promotion_ids.includes('P1')
+            ? DISCOUNTED_PRICE
+            : BASE_PRICE,
+        ),
+      )
+    }
+    return Promise.reject(new Error(`Unexpected fetch: ${url}`))
+  })
+  vi.stubGlobal('fetch', fetchMock)
 
   render(<App />)
 
-  // Add beans x3 once the catalog has loaded; the debounced POST /price
-  // fires and the base total renders.
+  // Add beans x3 on the shop page once the catalog has loaded. The shop
+  // page never prices: no /price call may have fired here.
   const addButton = await screen.findByRole('button', {
     name: 'Add Ethiopia Yirgacheffe, 12oz',
   })
   fireEvent.click(addButton)
   fireEvent.click(addButton)
   fireEvent.click(addButton)
+  expect(
+    fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/price')),
+  ).toHaveLength(0)
+
+  // Go to checkout: the debounced POST /price fires on arrival and the
+  // canned base total renders.
+  fireEvent.click(screen.getByRole('button', { name: 'Go to checkout' }))
   expect(await screen.findByText('$55.00')).toBeDefined()
 
   // Toggle P1: the repriced total and its explanation come straight from

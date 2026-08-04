@@ -75,6 +75,28 @@ button:disabled {
   }
 }
 
+/* Shop page: prominent checkout call-to-action under the cart. */
+.checkout-cta {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.checkout-button {
+  font-size: var(--font-size-base);
+  padding: var(--space-2) var(--space-4);
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+/* Checkout page: navigation back to the shop. */
+.back-link {
+  display: inline-block;
+  margin-bottom: var(--space-4);
+  color: var(--color-accent);
+}
+
 /* Catalog */
 .catalog-list {
   list-style: none;
