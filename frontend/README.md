@@ -25,3 +25,4 @@ CI gate (per `docs/clean-code-enforcement.md`): `build`, `lint`, `format:check`,
 
 - `src/styles/tokens.css` — design tokens (colors, fonts, spacing scale); components use these custom properties only.
 - `src/index.css` — base styles, mobile-first.
+- `public/products/` — product photos, one `<SKU>.jpg` per catalog item, resolved by convention (no per-SKU list in code). CC-licensed; attribution in `public/products/CREDITS.md`.

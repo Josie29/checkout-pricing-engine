@@ -1,5 +1,6 @@
 import type { CatalogItem } from '../types'
 import { formatCents } from '../format'
+import { ProductImage } from './ProductImage'
 
 interface CatalogListProps {
   catalog: CatalogItem[]
@@ -14,6 +15,7 @@ export function CatalogList({ catalog, onAdd }: CatalogListProps) {
       <ul className="catalog-list">
         {catalog.map((item) => (
           <li key={item.sku} className="catalog-item">
+            <ProductImage sku={item.sku} name={item.name} />
             <div className="catalog-item-info">
               <span>{item.name}</span>
               <span className="muted">
