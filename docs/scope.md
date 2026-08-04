@@ -30,8 +30,8 @@ High-level component breakdown. Backend is the focus; frontend stays minimal.
 ## Deferred (TODO: document in DECISIONS.md)
 
 - Auth / multi-tenant anything
-- ~~Promotion authoring UI or CRUD~~ — un-deferred (issue #68) as a runtime API (`POST /promotions`) + admin form: additions are in-memory only and reset on restart; persistence still deferred. Admin is unauthenticated by scope (auth is deferred above).
-- Persistence beyond seeded promotions (pricing is a pure function of inputs; runtime-added promotions are not persisted either)
+- ~~Promotion authoring UI or CRUD~~ — un-deferred (issue #68) as a runtime API (`POST /promotions`) + admin form; additions persist to SQLite as of issue #75 (below). Admin is unauthenticated by scope (auth is deferred above).
+- ~~Persistence beyond seeded promotions~~ — partially un-deferred (issue #75): runtime-added promotions now persist to a local SQLite file (stdlib `sqlite3`, no ORM; env `PROMOTIONS_DB_PATH`, default `backend/data/promotions.db`) and survive restarts. Everything else stays stateless: pricing is still a pure function of inputs, and a database for the catalog, carts, or orders remains out of scope
 - Multi-currency, tax, real shipping rates
 - Real checkout flow (payment, orders)
 - User-attribute-based promotion conditions (e.g. an `is_member` flag) — simplification for now; every condition is cart/item-derived

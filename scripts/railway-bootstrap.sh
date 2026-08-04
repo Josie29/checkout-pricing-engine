@@ -32,8 +32,17 @@ WEB_DOMAIN=$(railway domain --service web --json | jq -r '.domains[0]')
 echo "  api: $API_DOMAIN"
 echo "  web: $WEB_DOMAIN"
 
+echo "==> Volume (admin-added promotions persist in SQLite at /data)"
+# `railway volume add` has no --service flag; it attaches to the linked service.
+railway volume list 2>/dev/null | grep -q "Mount path: /data" || {
+  railway service link api >/dev/null
+  railway volume add -m /data
+}
+
 echo "==> Variables"
-railway variables --service api --skip-deploys --set "CORS_ORIGINS=${WEB_DOMAIN}" >/dev/null
+railway variables --service api --skip-deploys \
+  --set "CORS_ORIGINS=${WEB_DOMAIN}" \
+  --set "PROMOTIONS_DB_PATH=/data/promotions.db" >/dev/null
 # VITE_API_BASE_URL is consumed at build time; NIXPACKS_NODE_VERSION pins Node >= 22
 # (deps require it; Nixpacks defaults to 18); NIXPACKS_NO_CACHE avoids an EBUSY on the
 # node_modules cache mount during `npm ci`.

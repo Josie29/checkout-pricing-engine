@@ -24,6 +24,9 @@ dist/
 bin/
 obj/
 
+# Runtime promotions database (issue #75; PROMOTIONS_DB_PATH default)
+backend/data/
+
 # Worktrees
 .worktrees/
 *.egg-info/

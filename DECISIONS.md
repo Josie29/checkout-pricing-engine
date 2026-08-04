@@ -78,7 +78,9 @@ tsc, vitest smoke) gates every PR; pre-commit mirrors the fast checks locally.
 
 ## Deferred (deliberately out of scope — `docs/scope.md`)
 
-Auth/multi-tenancy; promotion authoring UI/CRUD; persistence; multi-currency, tax, real
+Auth/multi-tenancy; promotion authoring UI/CRUD; persistence (revised later: issue #75
+persists runtime-added promotions to a local SQLite file via stdlib `sqlite3` — pricing
+stays a pure function and the catalog/carts still have no database); multi-currency, tax, real
 shipping rates; real checkout (payment/orders); user-attribute conditions (every
 condition is cart-derived today); promotion expiration and usage limits (needs its own
 design — today's promotions are always-available); frontend test depth beyond the smoke
