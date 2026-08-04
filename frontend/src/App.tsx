@@ -95,6 +95,12 @@ function App() {
     )
   }
 
+  const setAllClaimed = (ids: string[]) => {
+    // One state update replacing the array identity, so the checkout page's
+    // debounced price effect fires exactly once for a bulk apply/clear.
+    setClaimedIds(ids)
+  }
+
   const retrySeed = () => {
     // Clearing the error returns the page to its loading state while the
     // re-fired fetches are in flight.
@@ -124,6 +130,7 @@ function App() {
           cartItems={cartItems}
           claimedIds={claimedIds}
           onToggle={togglePromotion}
+          onSetAllClaimed={setAllClaimed}
           onBackToShop={() => navigate('shop')}
         />
       ) : (

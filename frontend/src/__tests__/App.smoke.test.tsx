@@ -158,4 +158,23 @@ test('shop builds the cart and checkout renders the priced response', async () =
   expect(
     screen.getByText('$16.00 off Ethiopia Yirgacheffe, 12oz'),
   ).toBeDefined()
+
+  // Clear all, then apply all: each bulk click is a single claimed-ids
+  // update, so each fires exactly one more POST /price — clear-all with no
+  // ids, apply-all with every id. Catches the bug where a bulk action loops
+  // over toggles and sprays one request per promotion.
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+  expect(await screen.findByText('$55.00')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Apply all' }))
+  expect(await screen.findByText('$39.00')).toBeDefined()
+
+  const priceBodies = fetchMock.mock.calls
+    .filter(([input]) => String(input).endsWith('/price'))
+    .map(
+      ([, init]) =>
+        (JSON.parse(String(init?.body)) as { claimed_promotion_ids: string[] })
+          .claimed_promotion_ids,
+    )
+  // Arrival, toggle, clear-all, apply-all — four requests, no extras.
+  expect(priceBodies).toEqual([[], ['P1'], [], ['P1']])
 })
