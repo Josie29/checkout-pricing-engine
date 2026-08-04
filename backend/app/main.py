@@ -8,12 +8,16 @@ from app.catalog import CatalogItem
 from app.domain import Adjustment, Cart, Phase, PricedLine
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
 from app.optimizer import optimize
+from app.promotion_store import DuplicatePromotionIdError, PromotionStore
 from app.promotions import PROMOTION_REGISTRY, Promotion, PromotionTarget
+from app.seed_loader import SeedLoadError, parse_promotions
 from app.seeds import load_seed_catalog, load_seed_promotions
 
 # Seed data is loaded once at import time (the app has no lifespan hooks);
-# requests never re-read the seed files.
-PROMOTIONS: list[Promotion] = load_seed_promotions()
+# requests never re-read the seed files. `POST /promotions` appends runtime
+# additions to the store; they are in-memory only and vanish on restart —
+# deliberate, this project has no database (docs/scope.md).
+PROMOTION_STORE = PromotionStore(load_seed_promotions())
 CATALOG: list[CatalogItem] = load_seed_catalog()
 
 app = FastAPI(title="Pricing Engine")
@@ -49,8 +53,9 @@ class PriceResponse(BaseModel):
 
     Carries `PricingResult`'s fields verbatim at the top level (this shape is
     frozen — #25 swaps in the optimizer's numbers and flips `optimal` without
-    changing it) plus `promotion_statuses`, one entry per seeded promotion, so
-    the UI can distinguish claimed-but-ineligible from applied.
+    changing it) plus `promotion_statuses`, one entry per stored promotion
+    (seeds and runtime additions alike), so the UI can distinguish
+    claimed-but-ineligible from applied.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -94,10 +99,10 @@ _TYPE_BY_CLASS: dict[type[Promotion], str] = {
 
 
 def _promotion_info(promotion: Promotion) -> PromotionInfo:
-    """Project one seeded promotion into its `GET /promotions` entry.
+    """Project one stored promotion into its `GET /promotions` entry.
 
     Args:
-        promotion: A seeded promotion instance.
+        promotion: A stored (seed or runtime-added) promotion instance.
 
     Returns:
         The promotion's identity, type key, phase, target, and kind-specific
@@ -146,16 +151,17 @@ def price(request: PriceRequest) -> PriceResponse:
 
     Returns:
         The itemized result, explanation trace, totals, `optimal`, and one
-        status per seeded promotion.
+        status per stored promotion.
 
     Raises:
         HTTPException: 422 if a claimed id names no seeded promotion.
         EngineInvariantError: If a pricing invariant is violated — a server
             bug, surfaced as a 500 rather than mapped to a client error.
     """
+    promotions = PROMOTION_STORE.all()
     try:
-        naive = price_naive(request.cart, PROMOTIONS, request.claimed_promotion_ids)
-        optimized = optimize(request.cart, PROMOTIONS, request.claimed_promotion_ids)
+        naive = price_naive(request.cart, promotions, request.claimed_promotion_ids)
+        optimized = optimize(request.cart, promotions, request.claimed_promotion_ids)
     except EngineInvariantError:
         raise
     except ValueError as exc:
@@ -182,12 +188,48 @@ def price(request: PriceRequest) -> PriceResponse:
 
 @app.get("/promotions")
 def promotions() -> list[PromotionInfo]:
-    """List the seeded promotions for the UI's toggle list.
+    """List every promotion for the UI's toggle list.
 
     Returns:
-        Every seeded promotion, in seed (declaration) order.
+        Seeds first, then runtime additions, in insertion (declaration)
+        order — the same order the naive engine breaks cluster ties in.
     """
-    return [_promotion_info(promotion) for promotion in PROMOTIONS]
+    return [_promotion_info(promotion) for promotion in PROMOTION_STORE.all()]
+
+
+@app.post("/promotions", status_code=201)
+def add_promotion(entry: dict[str, object]) -> PromotionInfo:
+    """Add one promotion at runtime (issue #68's unauthenticated admin API).
+
+    The body is exactly one seed-entry object — the same shape as an
+    `app/seeds/promotions.json` entry: a `type` registry key, `id`, `name`,
+    `target`, and the kind's own fields. It is validated through the seed
+    loader, so every seed rule applies (registered kind, correctly-scoped
+    target, kind field constraints). The addition is in-memory only and is
+    gone after a restart (docs/scope.md defers persistence); `POST /price`
+    picks it up immediately with no engine changes, since clusters and the
+    optimizer derive everything from the promotion list.
+
+    Args:
+        entry: One raw seed-entry mapping.
+
+    Returns:
+        The stored promotion, serialized exactly as `GET /promotions` lists
+        it, with a 201 status.
+
+    Raises:
+        HTTPException: 422 if the entry fails seed validation or reuses an
+            existing promotion id (seed or prior addition).
+    """
+    try:
+        promotion = parse_promotions([entry])[0]
+    except SeedLoadError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        PROMOTION_STORE.add(promotion)
+    except DuplicatePromotionIdError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _promotion_info(promotion)
 
 
 @app.get("/catalog")
