@@ -2,21 +2,35 @@
  * Design tokens — the only place colors, fonts, and shared scale values are
  * defined. Components consume these custom properties; no hardcoded values.
  * Spacing follows a 0.25rem scale (--space-*).
+ *
+ * Palette: Roast & Co coffee theme — cream page, latte surfaces, espresso
+ * header, coffee-brown accent. Text/background pairs spot-checked at
+ * WCAG AA or better (muted-on-cream 5.9:1, muted-on-surface 5.4:1,
+ * white-on-accent 7.4:1, header text 11.6:1, badge text 7.1:1).
  */
 :root {
   /* Colors */
-  --color-bg: #ffffff;
-  --color-surface: #f6f7f9;
-  --color-border: #d9dde3;
-  --color-text: #1f2733;
-  --color-text-muted: #5c6674;
-  --color-accent: #2563eb;
+  --color-bg: #faf6f0;
+  --color-surface: #f3ece1;
+  --color-border: #ddd0bd;
+  --color-text: #2d2118;
+  --color-text-muted: #6b5d4f;
+  --color-accent: #6f4e37;
   --color-accent-contrast: #ffffff;
-  --color-success: #15803d;
-  --color-danger: #b91c1c;
+  --color-success: #2f6b3a;
+  --color-danger: #9f2d1f;
+
+  /* Header (espresso bar) */
+  --color-header-bg: #3e2c22;
+  --color-header-text: #f7efe4;
+
+  /* Cart badge (caramel) */
+  --color-badge-bg: #e0a458;
+  --color-badge-text: #2d2118;
 
   /* Typography */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
   --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
