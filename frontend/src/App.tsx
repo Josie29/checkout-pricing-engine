@@ -136,6 +136,7 @@ function App() {
       ) : (
         <ShopPage
           catalog={catalog}
+          promotions={promotions}
           cartItems={cartItems}
           onAdd={addCatalogItem}
           onQtyStep={stepQty}
