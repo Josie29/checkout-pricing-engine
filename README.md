@@ -13,7 +13,8 @@ runnable rather than asserted in prose.
 
 ## Status
 
-Scaffolding. Brief not yet chosen, stack TBD.
+Project #5 selected. 
+Planning complete.
 
 ## Setup
 

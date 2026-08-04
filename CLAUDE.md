@@ -7,7 +7,7 @@
 
 # Deliverables
 
-1. The application
+1. The application (for project #5 which was selected)
 2. `DECISIONS.md`
 3. `README.md`
 
