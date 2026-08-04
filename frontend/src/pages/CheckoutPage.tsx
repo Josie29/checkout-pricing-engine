@@ -30,6 +30,8 @@ interface CheckoutPageProps {
   cartItems: CartItemInput[]
   claimedIds: string[]
   onToggle: (id: string, claimed: boolean) => void
+  /** Replace the claimed set wholesale (apply all / clear all). */
+  onSetAllClaimed: (ids: string[]) => void
   /** Navigate back to the shop page. */
   onBackToShop: () => void
 }
@@ -63,6 +65,7 @@ export function CheckoutPage({
   cartItems,
   claimedIds,
   onToggle,
+  onSetAllClaimed,
   onBackToShop,
 }: CheckoutPageProps) {
   const [priced, setPriced] = useState<PricedResult | null>(null)
@@ -155,6 +158,8 @@ export function CheckoutPage({
             claimedIds={claimedIds}
             statuses={priced?.response.promotion_statuses ?? null}
             onToggle={onToggle}
+            onSetAllClaimed={onSetAllClaimed}
+            pricePending={priceLoading}
           />
         </div>
         <div>

@@ -163,6 +163,12 @@ button:disabled {
 }
 
 /* Promotions */
+.promotion-bulk-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
 .promotion-list {
   list-style: none;
   margin: 0;
