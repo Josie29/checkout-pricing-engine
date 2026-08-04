@@ -68,6 +68,17 @@ Full CI gate (also run on every PR): `ruff check`, `ruff format --check`, `pyrig
 `pytest` (backend); `eslint`, `prettier --check`, `tsc --noEmit`, `vitest`, build
 (frontend). Pre-commit hooks mirror the fast checks: `pre-commit install`.
 
+## Deploy (Railway)
+
+Infrastructure is code (`docs/deployment-plan.md`): two services in one Railway project —
+`api` (Dockerfile, `backend/`) and `web` (static Vite build served with SPA fallback,
+`frontend/`) — each configured by its checked-in `railway.toml` (build, start command,
+`/health` healthcheck, restart policy, per-directory rebuild scoping). The one-time
+project/service creation that Railway can't express declaratively is captured in
+`scripts/railway-bootstrap.sh` (rerunnable; rerun once after first deploy to wire
+`CORS_ORIGINS` and `VITE_API_BASE_URL` to the assigned domains, then redeploy each
+service). After bootstrap, pushes to `main` deploy via the GitHub integration.
+
 ## Repository layout
 
 | Path | What |
