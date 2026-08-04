@@ -1,0 +1,14 @@
+# Railway config-as-code for the `web` service (docs/deployment-plan.md).
+# Service root directory: frontend/ (set once by scripts/railway-bootstrap.sh).
+# VITE_API_BASE_URL must be present at BUILD time (Railway service variable).
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm ci && npm run build"
+watchPatterns = ["frontend/**"]
+
+[deploy]
+# `serve -s` = SPA fallback to index.html
+startCommand = "npx serve -s dist -l ${PORT}"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
