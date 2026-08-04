@@ -65,6 +65,22 @@ body {
   }
 }
 
+/* Admin link — discreet header navigation to the promotion-authoring page.
+   The auto margin pulls it (and the cart button) to the right edge. */
+.admin-link {
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+  color: var(--color-header-text);
+  opacity: 0.7;
+  text-decoration: none;
+}
+
+.admin-link:hover,
+.admin-link:focus-visible {
+  opacity: 1;
+  text-decoration: underline;
+}
+
 /* Cart button — icon-only, on the header bar; relative so the badge can
    sit on the icon's corner (intentional break from flow). */
 .cart-button {
@@ -446,6 +462,65 @@ button:disabled {
 /* Dimmed while a newer price is in flight or the last request failed. */
 .price-stale {
   opacity: 0.5;
+}
+
+/* Admin page — single-column add-promotion form; capped width so the
+   controls stay readable on desktop. */
+.admin-note {
+  margin-bottom: var(--space-4);
+}
+
+.admin-form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 26rem;
+}
+
+.admin-field {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.admin-field input,
+.admin-field select {
+  font: inherit;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+.admin-target {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.admin-target legend {
+  padding: 0 var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.admin-radios {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.admin-radios label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.admin-success {
+  margin: 0;
+  color: var(--color-success);
 }
 
 .visually-hidden {
