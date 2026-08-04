@@ -7,7 +7,7 @@ The graded artifact is judgment, not features. Architecture and long-term mainta
 carry the most weight; every performance or correctness claim has to be backed by something
 runnable rather than asserted in prose. 
 
-- [docs/BRIEF.md](docs/BRIEF.md) — the partner brief, verbatim
+- [BRIEF.md](BRIEF.md) — the partner brief, verbatim
 - `DECISIONS.md` — required deliverable, ~2 pages, not yet written
 - Timebox: 2–5 days
 
