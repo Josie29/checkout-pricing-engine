@@ -1,11 +1,15 @@
 import importlib
+from collections.abc import Collection, Sequence
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 import app.main
+from app.domain import Cart, PricedLine, PricingResult
+from app.engine import EngineConfig, EngineOutcome, price_naive
 from app.main import app as fastapi_app
+from app.promotions import Promotion
 
 client = TestClient(fastapi_app)
 
@@ -54,7 +58,10 @@ class TestPrice:
         assert body["discount_total_cents"] == 2925
         assert body["shipping_cents"] == 1000
         assert body["total_cents"] == 5675
-        assert body["optimal"] is False
+        # The naive pick is also the optimum on this cart (bigger item
+        # discounts only help P2), so the optimizer's result comes back
+        # with identical numbers, now labeled optimal.
+        assert body["optimal"] is True
         assert body["lines"] == [
             {
                 "sku": "COF-ETH",
@@ -164,6 +171,115 @@ class TestPrice:
         """
         response = _price([], ["P1"])
         assert response.status_code == 422
+
+
+# The P4/P2 conflict cart (see tests/test_optimizer.py's oracle for the
+# hand arithmetic): 2800 + 2200 = 5000c exactly, P4 would kill P2's
+# threshold, best outcome withholds P4 and takes P2's 750c.
+_CONFLICT_CART: list[dict[str, object]] = [
+    {"sku": "BREW-V60", "category": "Brew Gear", "unit_price_cents": 2800, "qty": 1},
+    {"sku": "MUG-TVL", "category": "Drinkware", "unit_price_cents": 2200, "qty": 1},
+]
+
+
+class TestPriceOptimizer:
+    """POST /price returns the optimizer's result when it wins the check."""
+
+    def test_conflict_cart_returns_the_optimized_total(self) -> None:
+        """The P4/P2 cart prices at 5250c with P4 withheld-but-claimed.
+
+        The optimizer's user-facing payoff: without it the shopper pays
+        5500c (naive applies P4 and forfeits P2). Catches the API still
+        returning the naive result, and catches the withheld promotion
+        leaking a new status value — the frozen UI contract shows it as
+        plain "claimed".
+        """
+        response = _price(_CONFLICT_CART, ["P4", "P2"])
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total_cents"] == 5250
+        assert body["optimal"] is True
+        assert [adj["promotion_id"] for adj in body["adjustments"]] == ["P2"]
+        assert body["promotion_statuses"]["P4"] == "claimed"
+        assert body["promotion_statuses"]["P2"] == "applied"
+
+    def test_worse_than_naive_optimizer_result_is_discarded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A buggy optimizer returning a worse total falls back to naive.
+
+        The runtime sanity check as a live guard (docs/optimizer-spec.md):
+        catches the API trusting the optimizer unconditionally — a search
+        bug would silently overcharge shoppers instead of degrading to the
+        naive price with `optimal: false`.
+        """
+
+        def bad_optimize(
+            cart: Cart,
+            promotions: Sequence[Promotion],
+            claimed_ids: Collection[str],
+            config: EngineConfig | None = None,
+        ) -> EngineOutcome:
+            """Price with no promotions at all, mislabeled as optimal."""
+            outcome = price_naive(cart, promotions, [])
+            return EngineOutcome(
+                result=outcome.result.model_copy(update={"optimal": True}),
+                statuses=outcome.statuses,
+            )
+
+        monkeypatch.setattr(app.main, "optimize", bad_optimize)
+        response = _price(_CONFLICT_CART, ["P4", "P2"])
+        assert response.status_code == 200
+        body = response.json()
+        # Naive's answer, not the fake's 6000c no-promo result.
+        assert body["total_cents"] == 5500
+        assert body["optimal"] is False
+        assert body["promotion_statuses"]["P4"] == "applied"
+        assert body["promotion_statuses"]["P2"] == "claimed"
+
+    def test_non_positive_optimizer_total_is_discarded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A zero-total optimizer result trips the `0 < total` guard.
+
+        Catches the sanity check only comparing against naive — a
+        degenerate zero (or clamped-to-zero) result would otherwise sail
+        through as "not worse" and give the cart away.
+        """
+
+        def zero_optimize(
+            cart: Cart,
+            promotions: Sequence[Promotion],
+            claimed_ids: Collection[str],
+            config: EngineConfig | None = None,
+        ) -> EngineOutcome:
+            """Return an internally-consistent result totaling zero cents."""
+            zero_line = PricedLine(
+                sku="ZERO",
+                category="Nothing",
+                unit_price_cents=0,
+                qty=1,
+                line_subtotal_cents=0,
+                discount_cents=0,
+                line_total_cents=0,
+            )
+            result = PricingResult(
+                lines=[zero_line],
+                subtotal_cents=0,
+                discount_total_cents=0,
+                shipping_cents=0,
+                total_cents=0,
+                optimal=True,
+            )
+            return EngineOutcome(result=result, statuses={})
+
+        monkeypatch.setattr(app.main, "optimize", zero_optimize)
+        response = _price(_CONFLICT_CART, ["P4", "P2"])
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total_cents"] == 5500
+        assert body["optimal"] is False
+        assert body["promotion_statuses"]["P4"] == "applied"
 
 
 class TestPromotions:
