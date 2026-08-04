@@ -23,7 +23,10 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["app"]
+packages = ["app", "app.seeds"]
+
+[tool.setuptools.package-data]
+"app.seeds" = ["*.json"]
 
 [tool.ruff]
 target-version = "py312"

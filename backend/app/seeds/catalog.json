@@ -1,0 +1,10 @@
+[
+  {"sku": "COF-ETH", "name": "Ethiopia Yirgacheffe, 12oz", "category": "Coffee Beans", "unit_price_cents": 1600},
+  {"sku": "COF-COL", "name": "Colombia Supremo, 12oz", "category": "Coffee Beans", "unit_price_cents": 1400},
+  {"sku": "COF-DEC", "name": "Sumatra Decaf, 12oz", "category": "Coffee Beans", "unit_price_cents": 1500},
+  {"sku": "BREW-V60", "name": "Ceramic Pour-Over Dripper", "category": "Brew Gear", "unit_price_cents": 2800},
+  {"sku": "BREW-GRD", "name": "Manual Burr Grinder", "category": "Brew Gear", "unit_price_cents": 4500},
+  {"sku": "MUG-CLS", "name": "Classic Stoneware Mug", "category": "Drinkware", "unit_price_cents": 1200},
+  {"sku": "MUG-TVL", "name": "Travel Tumbler", "category": "Drinkware", "unit_price_cents": 2200},
+  {"sku": "SNK-BSC", "name": "Almond Biscotti, 6pk", "category": "Snacks", "unit_price_cents": 900}
+]
