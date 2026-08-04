@@ -5,7 +5,6 @@
 [build]
 builder = "NIXPACKS"
 buildCommand = "npm ci && npm run build"
-watchPatterns = ["frontend/**"]
 
 [deploy]
 # `serve -s` = SPA fallback to index.html
