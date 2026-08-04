@@ -70,14 +70,18 @@ Full CI gate (also run on every PR): `ruff check`, `ruff format --check`, `pyrig
 
 ## Deploy (Railway)
 
+Live: [web](https://web-production-e530a.up.railway.app) ·
+[api health](https://api-production-b55d.up.railway.app/health)
+
 Infrastructure is code (`docs/deployment-plan.md`): two services in one Railway project —
 `api` (Dockerfile, `backend/`) and `web` (static Vite build served with SPA fallback,
 `frontend/`) — each configured by its checked-in `railway.toml` (build, start command,
-`/health` healthcheck, restart policy, per-directory rebuild scoping). The one-time
-project/service creation that Railway can't express declaratively is captured in
-`scripts/railway-bootstrap.sh` (rerunnable; rerun once after first deploy to wire
-`CORS_ORIGINS` and `VITE_API_BASE_URL` to the assigned domains, then redeploy each
-service). After bootstrap, pushes to `main` deploy via the GitHub integration.
+`/health` healthcheck, restart policy). Everything Railway can't express declaratively
+(project/service creation, domains, env wiring, deploy) is `scripts/railway-bootstrap.sh`:
+rerunnable from nothing to running, and rerunnable again to redeploy. Domains are created
+before the first deploy, so `CORS_ORIGINS` (api) and `VITE_API_BASE_URL` (web, build-time)
+are wired up front — no second deploy needed. GitHub-integrated CD is an optional layer:
+set each service's Root Directory once in the dashboard (the only non-CLI step).
 
 ## Repository layout
 
