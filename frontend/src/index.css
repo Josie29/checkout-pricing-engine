@@ -1,0 +1,31 @@
+@import './styles/tokens.css';
+
+/* Base styles — mobile-first; widen with min-width breakpoints as needed. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+}
+
+.app {
+  padding: var(--space-6) var(--space-4);
+}
+
+h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xl);
+}
+
+.app p {
+  margin: 0;
+  color: var(--color-text-muted);
+}

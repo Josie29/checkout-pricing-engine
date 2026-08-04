@@ -23,3 +23,7 @@ dist/
 # .NET
 bin/
 obj/
+
+# Worktrees
+.worktrees/
+*.egg-info/

@@ -33,6 +33,17 @@ Reviewers read commit history, not just the final diff — it should show proces
 - Every commit should build/pass tests; no "wip" or giant dump commits.
 - Imperative mood titles ("Add scope.md", not "Added").
 
+# Software Factory Agents
+
+`.claude/agents/`: `backend-implementor` (backend/ only, incl. all backend test suites),
+`frontend-implementor` (frontend/ only), `po-verifier` (read-only acceptance gate, runs last).
+The main session orchestrates — no orchestrator agent. Each agent has hard file boundaries;
+check its frontmatter before assuming it can touch a file. Tests are written by the
+implementor that owns the code (per docs/testing-strategy.md) — there is deliberately no
+separate test-writer agent. Mark small visual/copy tasks `LIGHT` in the prompt: implementor
+does build + spot-check only, no po-verifier gate. Full gates for logic/state/contract
+changes and merges. Parallel implementors get different uvicorn ports (8001/8002/…).
+
 # Branching
 
 Multiple agents work independent features in parallel — `staging` is the integration branch that catches conflicts before `main`.
