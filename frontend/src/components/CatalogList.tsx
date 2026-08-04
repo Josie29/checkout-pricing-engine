@@ -31,11 +31,15 @@ function itemPromotionsFor(
   )
 }
 
-/** Seeded catalog with an add button and deal chips per product. */
+/**
+ * Seeded catalog as a grid of image-led cards: photo on top, name and
+ * category below, deal chips, and a price + Add row pinned to the card
+ * bottom. The heading lives in `ShopPage` (next to the deals toggle), so
+ * the section labels itself.
+ */
 export function CatalogList({ catalog, promotions, onAdd }: CatalogListProps) {
   return (
-    <section aria-labelledby="catalog-heading">
-      <h2 id="catalog-heading">Catalog</h2>
+    <section aria-label="Catalog">
       <ul className="catalog-list">
         {catalog.map((item) => {
           const deals = itemPromotionsFor(item, promotions)
@@ -43,10 +47,8 @@ export function CatalogList({ catalog, promotions, onAdd }: CatalogListProps) {
             <li key={item.sku} className="catalog-item">
               <ProductImage sku={item.sku} name={item.name} />
               <div className="catalog-item-info">
-                <span>{item.name}</span>
-                <span className="muted">
-                  {item.category} · {formatCents(item.unit_price_cents)}
-                </span>
+                <span className="catalog-item-name">{item.name}</span>
+                <span className="muted">{item.category}</span>
                 {deals.length > 0 && (
                   <ul
                     className="deal-chips"
@@ -59,14 +61,20 @@ export function CatalogList({ catalog, promotions, onAdd }: CatalogListProps) {
                     ))}
                   </ul>
                 )}
+                <div className="catalog-item-buy">
+                  <span className="catalog-item-price">
+                    {formatCents(item.unit_price_cents)}
+                  </span>
+                  <button
+                    type="button"
+                    className="add-button"
+                    onClick={() => onAdd(item)}
+                    aria-label={`Add ${item.name}`}
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onAdd(item)}
-                aria-label={`Add ${item.name}`}
-              >
-                Add
-              </button>
             </li>
           )
         })}

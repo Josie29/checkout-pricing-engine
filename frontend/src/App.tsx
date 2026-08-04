@@ -6,6 +6,7 @@ import { ShopPage } from './pages/ShopPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { AdminPage } from './pages/AdminPage'
 import { CartButton } from './components/CartButton'
+import { CartDrawer } from './components/CartDrawer'
 
 /**
  * Two-page pricing UI: the shop (`/`) builds the cart without ever pricing;
@@ -22,6 +23,9 @@ function App() {
 
   const [cartItems, setCartItems] = useState<CartItemInput[]>([])
   const [claimedIds, setClaimedIds] = useState<string[]>([])
+  // The header cart pill toggles this slide-over; adding items never opens
+  // it — the pill's live count is the feedback.
+  const [cartOpen, setCartOpen] = useState(false)
 
   // Bumping the nonce re-runs the seed fetch effect — the retry button's
   // only job.
@@ -140,9 +144,25 @@ function App() {
           >
             Admin
           </a>
-          <CartButton count={cartCount} onClick={() => navigate('checkout')} />
+          <CartButton
+            count={cartCount}
+            expanded={cartOpen}
+            onClick={() => setCartOpen((open) => !open)}
+          />
         </div>
       </header>
+      <CartDrawer
+        open={cartOpen}
+        items={cartItems}
+        onQtyStep={stepQty}
+        onPriceChange={changePrice}
+        onRemove={removeItem}
+        onClose={() => setCartOpen(false)}
+        onCheckout={() => {
+          setCartOpen(false)
+          navigate('checkout')
+        }}
+      />
       <main className="app">
         {seedError !== null ? (
           <div role="alert">
@@ -177,12 +197,7 @@ function App() {
           <ShopPage
             catalog={catalog}
             promotions={promotions}
-            cartItems={cartItems}
             onAdd={addCatalogItem}
-            onQtyStep={stepQty}
-            onPriceChange={changePrice}
-            onRemove={removeItem}
-            onCheckout={() => navigate('checkout')}
           />
         )}
       </main>

@@ -81,35 +81,70 @@ body {
   text-decoration: underline;
 }
 
-/* Cart button — icon-only, on the header bar; relative so the badge can
-   sit on the icon's corner (intentional break from flow). */
+/* Cart button — a pill on the header bar: icon plus a live "N items"
+   count. Toggles the cart drawer. */
 .cart-button {
-  position: relative;
   display: inline-flex;
-  padding: var(--space-2);
-  border: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-header-text);
+  border-radius: 999px;
   background: none;
   color: var(--color-header-text);
 }
 
 .cart-icon {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
-.cart-badge {
-  position: absolute;
+.cart-count {
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.cart-count b {
+  color: var(--color-badge-bg);
+}
+
+/* Cart drawer — slide-over panel from the right; the scrim click-closes.
+   Fixed positioning is the intentional break from flow for an overlay. */
+.cart-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: var(--color-scrim);
+}
+
+.cart-drawer {
+  position: fixed;
   top: 0;
   right: 0;
-  min-width: 1.125rem;
-  padding: 0 var(--space-1);
-  border-radius: 0.5625rem; /* half the min-width: pill at 2+ digits */
-  font-size: 0.75rem;
-  font-weight: bold;
-  line-height: 1.5;
-  text-align: center;
-  background-color: var(--color-badge-bg);
-  color: var(--color-badge-text);
+  bottom: 0;
+  width: min(26rem, 100%);
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4) var(--space-6);
+  background-color: var(--color-bg);
+  box-shadow: var(--shadow-drawer);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cart-drawer {
+    animation: cart-drawer-in 160ms ease-out;
+  }
+
+  @keyframes cart-drawer-in {
+    from {
+      transform: translateX(1.5rem);
+      opacity: 0;
+    }
+  }
+}
+
+.cart-drawer-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
 }
 
 h1 {
@@ -165,7 +200,20 @@ button:disabled {
   }
 }
 
-/* Shop page: prominent checkout call-to-action under the cart. */
+/* Shop toolbar — "Catalog" heading with the deals toggle on the right. */
+.shop-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.shop-toolbar h2 {
+  margin: 0;
+}
+
+/* Cart drawer: prominent checkout call-to-action under the cart table. */
 .checkout-cta {
   display: grid;
   gap: var(--space-2);
@@ -215,8 +263,8 @@ button:disabled {
   aspect-ratio: 1;
 }
 
-/* Deals banner — read-only cart/shipping promotion signage above the
-   catalog; promotions themselves apply on the checkout page. */
+/* Deals banner — read-only cart/shipping promotion signage, revealed by
+   the shop toolbar's deals toggle; promotions apply on the checkout page. */
 .deals-banner {
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
@@ -250,34 +298,71 @@ button:disabled {
   background-color: var(--color-surface);
 }
 
-/* Catalog */
+/* Catalog — image-led cards in a responsive grid (2-up on phones,
+   3-4-up as the viewport widens). */
 .catalog-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--space-3);
 }
 
 .catalog-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  background-color: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Inside a card the photo spans the full width; the card's border and
+   overflow clipping replace the image's own frame. */
+.catalog-item .product-image--card {
+  width: 100%;
+  border: none;
+  border-radius: 0;
 }
 
 .catalog-item-info {
   display: flex;
   flex-direction: column;
-  /* Fill the space between the image and the Add button. */
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  /* Fill the card so the buy row can pin to the bottom. */
   flex: 1;
+}
+
+.catalog-item-name {
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .catalog-item-info .muted {
   font-size: var(--font-size-sm);
+}
+
+/* Price + Add pinned to the card bottom so short and tall cards align. */
+.catalog-item-buy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.catalog-item-price {
+  font-weight: bold;
+}
+
+.add-button {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: var(--color-accent-contrast);
 }
 
 /* Cart */

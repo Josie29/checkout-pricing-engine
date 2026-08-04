@@ -1,9 +1,10 @@
 /*
  * The single frontend smoke test (docs/testing-strategy.md). Removing it
  * means nothing catches the bug where the two-page flow stops working
- * end-to-end — e.g. the shop page failing to build a cart, "Go to checkout"
- * not routing, the checkout page never firing its `POST /price`, or the
- * panel ignoring the server's total and explanation.
+ * end-to-end — e.g. the shop page failing to build a cart, the header cart
+ * pill not opening the drawer, "Go to checkout" not routing, the checkout
+ * page never firing its `POST /price`, or the panel ignoring the server's
+ * total and explanation.
  */
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -141,11 +142,12 @@ test('shop builds the cart and checkout renders the priced response', async () =
     fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/price')),
   ).toHaveLength(0)
 
-  // The header cart badge counts the three adds live (a count, not money).
-  expect(screen.getByRole('button', { name: 'Cart, 3 items' })).toBeDefined()
+  // The header cart pill counts the three adds live (a count, not money);
+  // clicking it opens the cart drawer, which holds the checkout button.
+  fireEvent.click(screen.getByRole('button', { name: 'Cart, 3 items' }))
 
-  // Go to checkout: the debounced POST /price fires on arrival and the
-  // canned base total renders.
+  // Go to checkout from the drawer: the debounced POST /price fires on
+  // arrival and the canned base total renders.
   fireEvent.click(screen.getByRole('button', { name: 'Go to checkout' }))
   expect(await screen.findByText('$55.00')).toBeDefined()
 

@@ -1,23 +1,27 @@
 interface CartButtonProps {
   /** Total item count across cart lines (sum of quantities, not money). */
   count: number
-  /** Navigate to the checkout page. */
+  /** Whether the cart drawer is open — mirrored onto aria-expanded. */
+  expanded: boolean
+  /** Toggle the cart drawer. */
   onClick: () => void
 }
 
 /**
- * Header cart button: a shopping-cart glyph with a live item-count badge.
+ * Header cart pill: a shopping-cart glyph plus a live "N items" count.
  * Pure presentation — the count is summed by the owner from cart state;
- * no pricing happens here. The badge hides at zero, and the accessible
- * name always carries the count ("Cart, 4 items").
+ * no pricing happens here. Clicking toggles the cart drawer (it no longer
+ * navigates). The accessible name always carries the count ("Cart, 4
+ * items").
  */
-export function CartButton({ count, onClick }: CartButtonProps) {
-  const label = count === 1 ? 'Cart, 1 item' : `Cart, ${count} items`
+export function CartButton({ count, expanded, onClick }: CartButtonProps) {
+  const noun = count === 1 ? 'item' : 'items'
   return (
     <button
       type="button"
       className="cart-button"
-      aria-label={label}
+      aria-label={`Cart, ${count} ${noun}`}
+      aria-expanded={expanded}
       onClick={onClick}
     >
       <svg
@@ -35,11 +39,9 @@ export function CartButton({ count, onClick }: CartButtonProps) {
         <circle cx="9" cy="19.5" r="1.5" />
         <circle cx="17.5" cy="19.5" r="1.5" />
       </svg>
-      {count > 0 && (
-        <span className="cart-badge" aria-hidden="true">
-          {count}
-        </span>
-      )}
+      <span className="cart-count" aria-hidden="true">
+        <b>{count}</b> {noun}
+      </span>
     </button>
   )
 }
