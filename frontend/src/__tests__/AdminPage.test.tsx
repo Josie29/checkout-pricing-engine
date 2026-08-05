@@ -69,6 +69,7 @@ test('form posts the seed entry with dollars as integer cents and reports succes
       catalog={CATALOG}
       promotions={[SEEDED]}
       onCreated={onCreated}
+      onDeleted={() => {}}
       onBackToShop={() => {}}
     />,
   )
@@ -151,6 +152,7 @@ test('name auto-composes from the fields and posts unless overridden', async () 
       catalog={CATALOG}
       promotions={[]}
       onCreated={() => {}}
+      onDeleted={() => {}}
       onBackToShop={() => {}}
     />,
   )
@@ -178,4 +180,47 @@ test('name auto-composes from the fields and posts unless overridden', async () 
     percent_off: 15,
     min_subtotal_cents: 5000,
   })
+})
+
+/*
+ * Catches the remove control breaking: runtime additions must offer Remove
+ * (seeds must not), the click must issue the DELETE, and the deleted id
+ * must reach the owner so signage and claims drop it.
+ */
+test('remove appears only on added rows and deletes through the API', async () => {
+  const fetchMock = vi.fn<
+    (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  >(() =>
+    Promise.resolve({
+      ok: true,
+      status: 204,
+      json: () => Promise.reject(new Error('no body')),
+    } as unknown as Response),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  const onDeleted = vi.fn()
+
+  render(
+    <AdminPage
+      catalog={CATALOG}
+      promotions={[SEEDED, CREATED]}
+      onCreated={() => {}}
+      onDeleted={onDeleted}
+      onBackToShop={() => {}}
+    />,
+  )
+
+  // Only the runtime addition has a Remove control.
+  expect(
+    screen.queryByRole('button', { name: `Remove ${SEEDED.name}` }),
+  ).toBeNull()
+  fireEvent.click(
+    screen.getByRole('button', { name: `Remove ${CREATED.name}` }),
+  )
+  await vi.waitFor(() => {
+    expect(onDeleted).toHaveBeenCalledWith(CREATED.id)
+  })
+  const [url, init] = fetchMock.mock.calls[0] ?? []
+  expect(String(url).endsWith(`/promotions/${CREATED.id}`)).toBe(true)
+  expect(init?.method).toBe('DELETE')
 })
