@@ -12,7 +12,12 @@ from app.catalog import CatalogItem
 from app.domain import Adjustment, Cart, Phase, PhaseSubtotals, PricedLine
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
 from app.optimizer import optimize
-from app.promotion_store import DuplicatePromotionIdError, PromotionStore
+from app.promotion_store import (
+    DuplicatePromotionIdError,
+    PromotionStore,
+    SeedPromotionError,
+    UnknownPromotionIdError,
+)
 from app.promotions import PROMOTION_REGISTRY, Promotion, PromotionTarget
 from app.seed_loader import SeedLoadError, parse_promotions
 from app.seeds import load_seed_catalog, load_seed_promotions
@@ -349,6 +354,30 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
     except DuplicatePromotionIdError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _promotion_info(promotion, PromotionSource.RUNTIME)
+
+
+@app.delete("/promotions/{promotion_id}", status_code=204)
+def delete_promotion(promotion_id: str) -> None:
+    """Remove one runtime-added promotion (the admin list's remove control).
+
+    Seeds are file-owned and immutable — deleting one is refused. The
+    removal is persisted (write-through, like adds), so it survives
+    restarts. A shopper session that had already claimed the deleted id
+    sees its next `POST /price` fail as a 422; a refresh recovers.
+
+    Args:
+        promotion_id: Id of the addition to remove.
+
+    Raises:
+        HTTPException: 404 if no stored promotion has the id; 422 if the
+            id names a seed.
+    """
+    try:
+        PROMOTION_STORE.remove_addition(promotion_id)
+    except UnknownPromotionIdError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeedPromotionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/catalog")

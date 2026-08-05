@@ -21,6 +21,14 @@ class DuplicatePromotionIdError(ValueError):
     """A promotion was added under an id the store already holds."""
 
 
+class SeedPromotionError(ValueError):
+    """A removal named a seed promotion — seeds are file-owned, immutable."""
+
+
+class UnknownPromotionIdError(ValueError):
+    """A removal named an id no stored promotion has."""
+
+
 class PromotionStoreLoadError(ValueError):
     """A persisted promotion row could not be restored at startup.
 
@@ -143,6 +151,38 @@ class PromotionStore:
             finally:
                 conn.close()
             self._additions.append(promotion)
+
+    def remove_addition(self, promotion_id: str) -> None:
+        """Remove one runtime addition; seeds are immutable.
+
+        Deletes the persisted row before the in-memory entry, mirroring
+        `add()`'s write-through: a removal the API acknowledged never
+        resurrects on restart.
+
+        Args:
+            promotion_id: Id of the addition to remove.
+
+        Raises:
+            SeedPromotionError: If the id names a seed.
+            UnknownPromotionIdError: If no stored promotion has the id.
+        """
+        with self._lock:
+            if any(seed.id == promotion_id for seed in self._seeds):
+                raise SeedPromotionError(
+                    f"promotion {promotion_id!r} is a seed and cannot be removed"
+                )
+            if all(added.id != promotion_id for added in self._additions):
+                raise UnknownPromotionIdError(f"no promotion with id {promotion_id!r}")
+            conn = self._connect()
+            try:
+                with conn:
+                    conn.execute(_SCHEMA)
+                    conn.execute("DELETE FROM promotions WHERE id = ?", (promotion_id,))
+            finally:
+                conn.close()
+            self._additions = [
+                added for added in self._additions if added.id != promotion_id
+            ]
 
     def clear_additions(self) -> None:
         """Drop every runtime addition, keeping the seeds (testing hook).
