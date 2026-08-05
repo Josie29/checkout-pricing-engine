@@ -57,6 +57,17 @@ export interface Adjustment {
   line_allocations: LineAllocation[]
 }
 
+/**
+ * Items subtotal at each cascade boundary — what the items summed to after
+ * item-phase deals (the base cart deals compute on) and after cart-phase
+ * deals (the base free-shipping thresholds check). Additive field; older
+ * servers omit it.
+ */
+export interface PhaseSubtotals {
+  after_item_cents: number
+  after_cart_cents: number
+}
+
 /** `POST /price` 200 response body. */
 export interface PriceResponse {
   lines: PricedLine[]
@@ -66,6 +77,7 @@ export interface PriceResponse {
   shipping_cents: number
   total_cents: number
   optimal: boolean
+  phase_subtotals?: PhaseSubtotals | null
   promotion_statuses: Record<string, PromotionStatus>
 }
 

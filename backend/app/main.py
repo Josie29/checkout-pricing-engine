@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.catalog import CatalogItem
-from app.domain import Adjustment, Cart, Phase, PricedLine
+from app.domain import Adjustment, Cart, Phase, PhaseSubtotals, PricedLine
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
 from app.optimizer import optimize
 from app.promotion_store import DuplicatePromotionIdError, PromotionStore
@@ -71,10 +71,11 @@ class PriceResponse(BaseModel):
     """`POST /price` response: the priced result plus per-promotion statuses.
 
     Carries `PricingResult`'s fields verbatim at the top level (this shape is
-    frozen — #25 swaps in the optimizer's numbers and flips `optimal` without
-    changing it) plus `promotion_statuses`, one entry per stored promotion
-    (seeds and runtime additions alike), so the UI can distinguish
-    claimed-but-ineligible from applied.
+    frozen for existing fields — #25 swaps in the optimizer's numbers and
+    flips `optimal` without changing it; `phase_subtotals` is an additive
+    field for the checkout deals explainer) plus `promotion_statuses`, one
+    entry per stored promotion (seeds and runtime additions alike), so the
+    UI can distinguish claimed-but-ineligible from applied.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -86,6 +87,7 @@ class PriceResponse(BaseModel):
     shipping_cents: int
     total_cents: int
     optimal: bool
+    phase_subtotals: PhaseSubtotals | None
     promotion_statuses: dict[str, PromotionStatus]
 
 
@@ -201,6 +203,7 @@ def price(request: PriceRequest) -> PriceResponse:
         shipping_cents=result.shipping_cents,
         total_cents=result.total_cents,
         optimal=result.optimal,
+        phase_subtotals=result.phase_subtotals,
         promotion_statuses=outcome.statuses,
     )
 

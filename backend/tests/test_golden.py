@@ -80,6 +80,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 3800,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 2800,
+                "after_cart_cents": 2800,
+            },
             "promotion_statuses": {
                 "P1": "applied",
                 "P6": "available",
@@ -145,6 +149,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 8680,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 7680,
+                "after_cart_cents": 7680,
+            },
             "promotion_statuses": {
                 "P1": "claimed",
                 "P6": "applied",
@@ -236,6 +244,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 5250,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 5000,
+                "after_cart_cents": 4250,
+            },
             "promotion_statuses": {
                 "P1": "available",
                 "P6": "available",
@@ -346,6 +358,10 @@ class TestGoldenReceipts:
             "shipping_cents": 0,
             "total_cents": 12640,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 15800,
+                "after_cart_cents": 12640,
+            },
             "promotion_statuses": {
                 "P1": "available",
                 "P6": "available",
@@ -461,6 +477,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 5530,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 5330,
+                "after_cart_cents": 4530,
+            },
             "promotion_statuses": {
                 "P1": "available",
                 "P6": "available",

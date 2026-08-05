@@ -191,6 +191,7 @@ function App() {
         ) : route === 'checkout' ? (
           <CheckoutPage
             promotions={promotions}
+            catalog={catalog}
             cartItems={cartItems}
             claimedIds={claimedIds}
             onToggle={togglePromotion}

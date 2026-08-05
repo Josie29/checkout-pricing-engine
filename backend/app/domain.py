@@ -181,13 +181,31 @@ class PricedLine(BaseModel):
         return self
 
 
+class PhaseSubtotals(BaseModel):
+    """Items subtotal at each cascade boundary, for UI narration.
+
+    The cascade's intermediate numbers (docs/seed-promotions.md's phase
+    table): what the items summed to after Item-phase discounts (the base a
+    cart-percent promotion computes against) and after Cart-phase discounts
+    (the base a free-shipping threshold checks). The original subtotal is
+    `PricingResult.subtotal_cents`; shipping never changes item subtotals.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    after_item_cents: int = Field(ge=0)
+    after_cart_cents: int = Field(ge=0)
+
+
 class PricingResult(BaseModel):
     """Full pricing output: itemized breakdown, explanation trace, and totals.
 
     `shipping_cents` is the shipping actually charged (already net of any
     shipping-phase adjustment); item/cart-phase discounts land on the lines.
     `optimal` marks whether the optimizer's combination (vs. the naive
-    engine's) produced this result.
+    engine's) produced this result. `phase_subtotals` is additive (issue:
+    checkout deals explainer) — None only for results constructed outside
+    the engine cascade.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -199,6 +217,7 @@ class PricingResult(BaseModel):
     shipping_cents: int = Field(ge=0)
     total_cents: int = Field(ge=0)
     optimal: bool = False
+    phase_subtotals: PhaseSubtotals | None = None
 
     @model_validator(mode="after")
     def _check_invariants(self) -> Self:
@@ -248,4 +267,24 @@ class PricingResult(BaseModel):
             raise ValueError(
                 "line totals plus shipping_cents must equal total_cents exactly"
             )
+        if self.phase_subtotals is not None:
+            by_phase = {phase: 0 for phase in Phase}
+            for adj in self.adjustments:
+                by_phase[adj.phase] += adj.amount_cents
+            if (
+                self.phase_subtotals.after_item_cents
+                != self.subtotal_cents - by_phase[Phase.ITEM]
+            ):
+                raise ValueError(
+                    "after_item_cents must equal subtotal_cents minus the"
+                    " item-phase adjustment sum"
+                )
+            if (
+                self.phase_subtotals.after_cart_cents
+                != self.phase_subtotals.after_item_cents - by_phase[Phase.CART]
+            ):
+                raise ValueError(
+                    "after_cart_cents must equal after_item_cents minus the"
+                    " cart-phase adjustment sum"
+                )
         return self
