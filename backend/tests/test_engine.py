@@ -62,21 +62,21 @@ class TestGoldenCascade:
         assert result.adjustments == [
             Adjustment(
                 promotion_id="P1",
-                promotion_name="Beans: buy 2 get 1 free",
+                promotion_name="Coffee Beans: buy 2 get 1 free",
                 phase=Phase.ITEM,
                 amount_cents=1500,
                 line_allocations=[LineAllocation(sku="COF-DEC", amount_cents=1500)],
             ),
             Adjustment(
                 promotion_id="P4",
-                promotion_name="$5 off pour-over dripper",
+                promotion_name="$5.00 off Ceramic Pour-Over Dripper",
                 phase=Phase.ITEM,
                 amount_cents=500,
                 line_allocations=[LineAllocation(sku="BREW-V60", amount_cents=500)],
             ),
             Adjustment(
                 promotion_id="P2",
-                promotion_name="15% off $50+",
+                promotion_name="15% off $50.00+",
                 phase=Phase.CART,
                 amount_cents=825,
                 line_allocations=[
@@ -138,7 +138,7 @@ class TestGoldenCascade:
         assert result.adjustments == [
             Adjustment(
                 promotion_id="P7",
-                promotion_name="Free shipping $100+",
+                promotion_name="Free shipping $100.00+",
                 phase=Phase.SHIPPING,
                 amount_cents=1000,
             )

@@ -105,7 +105,7 @@ class TestLineItemAndCart:
         """Cart subtotal is the exact sum of its line subtotals.
 
         Catches the subtotal disagreeing with the cart's own lines — the
-        number every cart-phase threshold (e.g. 15% off $50+) is checked
+        number every cart-phase threshold (e.g. 15% off $50.00+) is checked
         against.
         """
         cart = Cart(
@@ -129,7 +129,7 @@ class TestAdjustment:
         with pytest.raises(ValidationError):
             Adjustment(
                 promotion_id="P2",
-                promotion_name="15% off $50+",
+                promotion_name="15% off $50.00+",
                 phase=Phase.CART,
                 amount_cents=100,
                 line_allocations=[LineAllocation(sku="COF-ETH", amount_cents=99)],
@@ -144,7 +144,7 @@ class TestAdjustment:
         with pytest.raises(ValidationError):
             Adjustment(
                 promotion_id="P4",
-                promotion_name="$5 off pour-over dripper",
+                promotion_name="$5.00 off Ceramic Pour-Over Dripper",
                 phase=Phase.ITEM,
                 amount_cents=500,
             )
@@ -158,7 +158,7 @@ class TestAdjustment:
         with pytest.raises(ValidationError):
             Adjustment(
                 promotion_id="P7",
-                promotion_name="Free shipping $100+",
+                promotion_name="Free shipping $100.00+",
                 phase=Phase.SHIPPING,
                 amount_cents=1000,
                 line_allocations=[LineAllocation(sku="COF-ETH", amount_cents=1000)],
@@ -172,7 +172,7 @@ class TestAdjustment:
         """
         adj = Adjustment(
             promotion_id="P7",
-            promotion_name="Free shipping $100+",
+            promotion_name="Free shipping $100.00+",
             phase=Phase.SHIPPING,
             amount_cents=1000,
         )
@@ -187,7 +187,7 @@ class TestAdjustment:
         with pytest.raises(ValidationError):
             Adjustment(
                 promotion_id="P1",
-                promotion_name="Beans: buy 2 get 1 free",
+                promotion_name="Coffee Beans: buy 2 get 1 free",
                 phase=Phase.ITEM,
                 amount_cents=200,
                 line_allocations=[
@@ -251,7 +251,7 @@ class TestPricingResult:
             "adjustments": [
                 Adjustment(
                     promotion_id="P2",
-                    promotion_name="15% off $50+",
+                    promotion_name="15% off $50.00+",
                     phase=Phase.CART,
                     amount_cents=300,
                     line_allocations=[
@@ -332,7 +332,7 @@ class TestPricingResult:
         fields["adjustments"] = [
             Adjustment(
                 promotion_id="P2",
-                promotion_name="15% off $50+",
+                promotion_name="15% off $50.00+",
                 phase=Phase.CART,
                 amount_cents=300,
                 line_allocations=[LineAllocation(sku="GHOST-SKU", amount_cents=300)],
@@ -354,7 +354,7 @@ class TestPricingResult:
         adjustments.append(
             Adjustment(
                 promotion_id="P7",
-                promotion_name="Free shipping $100+",
+                promotion_name="Free shipping $100.00+",
                 phase=Phase.SHIPPING,
                 amount_cents=1000,
             )

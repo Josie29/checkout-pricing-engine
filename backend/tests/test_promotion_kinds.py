@@ -40,7 +40,7 @@ class TestBuyXGetYFree:
         """A beans BXGY promotion like seed P1."""
         return BuyXGetYFree(
             id="P1",
-            name="Beans: buy 2 get 1 free",
+            name="Coffee Beans: buy 2 get 1 free",
             target=CategoryTarget(category="Coffee Beans"),
             min_qty=min_qty,
         )
@@ -150,7 +150,7 @@ class TestPercentOffItem:
         """A beans percent-off promotion like seed P6."""
         return PercentOffItem(
             id="P6",
-            name="Beans: bulk 20% off",
+            name="Coffee Beans: 20% off (min 3)",
             target=CategoryTarget(category="Coffee Beans"),
             min_qty=min_qty,
             percent_off=percent_off,
@@ -216,7 +216,7 @@ class TestPercentOffItem:
         """
         adjustment = self.promo().apply(beans_cart())
         assert adjustment.promotion_id == "P6"
-        assert adjustment.promotion_name == "Beans: bulk 20% off"
+        assert adjustment.promotion_name == "Coffee Beans: 20% off (min 3)"
         assert adjustment.phase is Phase.ITEM
 
 
@@ -228,7 +228,7 @@ class TestFixedOffItem:
         """A dripper fixed-off promotion like seed P4."""
         return FixedOffItem(
             id="P4",
-            name="$5 off pour-over dripper",
+            name="$5.00 off Ceramic Pour-Over Dripper",
             target=SkuTarget(sku="BREW-V60"),
             amount_off_cents=amount_off_cents,
         )
@@ -296,7 +296,7 @@ class TestPercentOffCart:
         """A cart percent-off promotion like seed P2."""
         return PercentOffCart(
             id="P2",
-            name="15% off $50+",
+            name="15% off $50.00+",
             target=CartTarget(),
             min_subtotal_cents=min_subtotal_cents,
             percent_off=percent_off,
@@ -348,7 +348,7 @@ class TestFreeShipping:
         """A free-shipping promotion like seed P7."""
         return FreeShipping(
             id="P7",
-            name="Free shipping $100+",
+            name="Free shipping $100.00+",
             target=ShippingTarget(),
             min_subtotal_cents=10000,
         )
