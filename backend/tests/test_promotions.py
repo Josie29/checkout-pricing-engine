@@ -124,7 +124,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "BXGY",
             "id": "P1",
-            "name": "Beans: buy 2 get 1 free",
+            "name": "Coffee Beans: buy 2 get 1 free",
             "target": {"kind": "category", "category": "Coffee Beans"},
             "min_qty": 3,
         },
@@ -141,7 +141,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "PCT_OFF_ITEM",
             "id": "P6",
-            "name": "Beans: bulk 20% off",
+            "name": "Coffee Beans: 20% off (min 3)",
             "target": {"kind": "category", "category": "Coffee Beans"},
             "min_qty": 3,
             "percent_off": 20,
@@ -154,7 +154,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "FIXED_OFF_ITEM",
             "id": "P4",
-            "name": "$5 off pour-over dripper",
+            "name": "$5.00 off Ceramic Pour-Over Dripper",
             "target": {"kind": "sku", "sku": "BREW-V60"},
             "amount_off_cents": 500,
         },
@@ -178,7 +178,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "PCT_OFF_CART",
             "id": "P2",
-            "name": "15% off $50+",
+            "name": "15% off $50.00+",
             "target": {"kind": "cart"},
             "min_subtotal_cents": 5000,
             "percent_off": 15,
@@ -191,7 +191,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "FREE_SHIPPING",
             "id": "P7",
-            "name": "Free shipping $100+",
+            "name": "Free shipping $100.00+",
             "target": {"kind": "shipping"},
             "min_subtotal_cents": 10000,
         },

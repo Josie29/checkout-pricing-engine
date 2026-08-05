@@ -69,7 +69,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P1",
-                    "promotion_name": "Beans: buy 2 get 1 free",
+                    "promotion_name": "Coffee Beans: buy 2 get 1 free",
                     "phase": "item",
                     "amount_cents": 1400,
                     "line_allocations": [{"sku": "COF-COL", "amount_cents": 1400}],
@@ -138,7 +138,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P6",
-                    "promotion_name": "Beans: bulk 20% off",
+                    "promotion_name": "Coffee Beans: 20% off (min 3)",
                     "phase": "item",
                     "amount_cents": 1920,
                     "line_allocations": [{"sku": "COF-ETH", "amount_cents": 1920}],
@@ -230,7 +230,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P2",
-                    "promotion_name": "15% off $50+",
+                    "promotion_name": "15% off $50.00+",
                     "phase": "cart",
                     "amount_cents": 750,
                     "line_allocations": [
@@ -330,14 +330,14 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P4",
-                    "promotion_name": "$5 off pour-over dripper",
+                    "promotion_name": "$5.00 off Ceramic Pour-Over Dripper",
                     "phase": "item",
                     "amount_cents": 500,
                     "line_allocations": [{"sku": "BREW-V60", "amount_cents": 500}],
                 },
                 {
                     "promotion_id": "P5",
-                    "promotion_name": "20% off $100+",
+                    "promotion_name": "20% off $100.00+",
                     "phase": "cart",
                     "amount_cents": 3160,
                     "line_allocations": [
@@ -347,7 +347,7 @@ class TestGoldenReceipts:
                 },
                 {
                     "promotion_id": "P7",
-                    "promotion_name": "Free shipping $100+",
+                    "promotion_name": "Free shipping $100.00+",
                     "phase": "shipping",
                     "amount_cents": 1000,
                     "line_allocations": [],
@@ -462,7 +462,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P2",
-                    "promotion_name": "15% off $50+",
+                    "promotion_name": "15% off $50.00+",
                     "phase": "cart",
                     "amount_cents": 800,
                     "line_allocations": [

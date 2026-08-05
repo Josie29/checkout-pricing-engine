@@ -19,12 +19,12 @@ Prices are integer cents, not decimal dollars — avoids floating-point rounding
 
 | ID | Name | Type | Phase | Target | Condition | Effect |
 |---|---|---|---|---|---|---|
-| P1 | Beans: buy 2 get 1 free | BXGY | Item | Category: Coffee Beans | qty ≥ 3 | cheapest unit free |
-| P6 | Beans: bulk 20% off | PCT_OFF_ITEM | Item | Category: Coffee Beans | qty ≥ 3 | 20% off each |
-| P4 | $5 off pour-over dripper | FIXED_OFF_ITEM | Item | SKU: BREW-V60 | none | −$5 |
-| P2 | 15% off $50+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $50 | 15% off subtotal |
-| P5 | 20% off $100+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $100 | 20% off subtotal |
-| P7 | Free shipping $100+ | FREE_SHIPPING | Shipping | shipping | subtotal ≥ $100 | shipping → $0 |
+| P1 | Coffee Beans: buy 2 get 1 free | BXGY | Item | Category: Coffee Beans | qty ≥ 3 | cheapest unit free |
+| P6 | Coffee Beans: 20% off (min 3) | PCT_OFF_ITEM | Item | Category: Coffee Beans | qty ≥ 3 | 20% off each |
+| P4 | $5.00 off Ceramic Pour-Over Dripper | FIXED_OFF_ITEM | Item | SKU: BREW-V60 | none | −$5 |
+| P2 | 15% off $50.00+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $50 | 15% off subtotal |
+| P5 | 20% off $100.00+ | PCT_OFF_CART | Cart | subtotal | subtotal ≥ $100 | 20% off subtotal |
+| P7 | Free shipping $100.00+ | FREE_SHIPPING | Shipping | shipping | subtotal ≥ $100 | shipping → $0 |
 
 ## Phases
 

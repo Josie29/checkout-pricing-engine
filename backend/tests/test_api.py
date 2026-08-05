@@ -93,21 +93,21 @@ class TestPrice:
         assert body["adjustments"] == [
             {
                 "promotion_id": "P1",
-                "promotion_name": "Beans: buy 2 get 1 free",
+                "promotion_name": "Coffee Beans: buy 2 get 1 free",
                 "phase": "item",
                 "amount_cents": 1600,
                 "line_allocations": [{"sku": "COF-ETH", "amount_cents": 1600}],
             },
             {
                 "promotion_id": "P4",
-                "promotion_name": "$5 off pour-over dripper",
+                "promotion_name": "$5.00 off Ceramic Pour-Over Dripper",
                 "phase": "item",
                 "amount_cents": 500,
                 "line_allocations": [{"sku": "BREW-V60", "amount_cents": 500}],
             },
             {
                 "promotion_id": "P2",
-                "promotion_name": "15% off $50+",
+                "promotion_name": "15% off $50.00+",
                 "phase": "cart",
                 "amount_cents": 825,
                 "line_allocations": [
@@ -303,7 +303,7 @@ class TestPromotions:
         assert [promo["id"] for promo in body] == ["P1", "P6", "P4", "P2", "P5", "P7"]
         assert body[0] == {
             "id": "P1",
-            "name": "Beans: buy 2 get 1 free",
+            "name": "Coffee Beans: buy 2 get 1 free",
             "type": "BXGY",
             "phase": "item",
             "target": {"kind": "category", "category": "Coffee Beans"},
@@ -314,7 +314,7 @@ class TestPromotions:
         # display data and must not leak into the list.
         assert body[-1] == {
             "id": "P7",
-            "name": "Free shipping $100+",
+            "name": "Free shipping $100.00+",
             "type": "FREE_SHIPPING",
             "phase": "shipping",
             "target": {"kind": "shipping"},
