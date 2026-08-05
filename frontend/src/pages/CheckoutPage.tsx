@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, postPrice } from '../api'
-import type { CartItemInput, PriceResponse, PromotionInfo } from '../types'
+import type {
+  CartItemInput,
+  CatalogItem,
+  PriceResponse,
+  PromotionInfo,
+} from '../types'
 import { PromotionToggles } from '../components/PromotionToggles'
 import { PricePanel } from '../components/PricePanel'
 
@@ -27,6 +32,8 @@ interface PriceFailure {
 
 interface CheckoutPageProps {
   promotions: PromotionInfo[]
+  /** Seeded catalog — sku -> name lookup for readable coupon scope lines. */
+  catalog: CatalogItem[]
   cartItems: CartItemInput[]
   claimedIds: string[]
   onToggle: (id: string, claimed: boolean) => void
@@ -62,6 +69,7 @@ function BackToShopLink({ onBackToShop }: { onBackToShop: () => void }) {
  */
 export function CheckoutPage({
   promotions,
+  catalog,
   cartItems,
   claimedIds,
   onToggle,
@@ -168,6 +176,7 @@ export function CheckoutPage({
         <div>
           <PromotionToggles
             promotions={promotions}
+            productNames={new Map(catalog.map((item) => [item.sku, item.name]))}
             claimedIds={claimedIds}
             statuses={priced?.response.promotion_statuses ?? null}
             savedCents={savedCents}

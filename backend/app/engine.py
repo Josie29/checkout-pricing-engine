@@ -4,7 +4,15 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.clusters import derive_clusters
-from app.domain import Adjustment, Cart, LineItem, Phase, PricedLine, PricingResult
+from app.domain import (
+    Adjustment,
+    Cart,
+    LineItem,
+    Phase,
+    PhaseSubtotals,
+    PricedLine,
+    PricingResult,
+)
 from app.promotions import Promotion
 
 
@@ -237,6 +245,11 @@ def _run_cascade(
     applied_ids: set[str] = set()
     shipping_discount = 0
     state = cart
+    # Overwritten at their phase boundaries below; the no-discount defaults
+    # also make the initial values semantically right (and prove to the type
+    # checker they are always bound).
+    after_item_cents = cart.subtotal_cents
+    after_cart_cents = cart.subtotal_cents
     for phase in Phase:
         for promotion in select(phase, state):
             if promotion.id in applied_ids:
@@ -274,6 +287,12 @@ def _run_cascade(
                             f" promotion {promotion.id!r}"
                         )
         state = _post_phase_cart(cart, discounts_by_sku)
+        # Cascade-boundary subtotals for the UI's deals explainer: the items
+        # total after this phase's discounts (shipping never changes it).
+        if phase is Phase.ITEM:
+            after_item_cents = state.subtotal_cents
+        elif phase is Phase.CART:
+            after_cart_cents = state.subtotal_cents
 
     lines = [
         PricedLine(
@@ -296,6 +315,10 @@ def _run_cascade(
         discount_total_cents=sum(adj.amount_cents for adj in adjustments),
         shipping_cents=shipping_cents,
         total_cents=sum(line.line_total_cents for line in lines) + shipping_cents,
+        phase_subtotals=PhaseSubtotals(
+            after_item_cents=after_item_cents,
+            after_cart_cents=after_cart_cents,
+        ),
     )
 
 

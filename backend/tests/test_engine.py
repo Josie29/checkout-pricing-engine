@@ -5,7 +5,14 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from app.clusters import derive_clusters
-from app.domain import Adjustment, Cart, LineAllocation, LineItem, Phase
+from app.domain import (
+    Adjustment,
+    Cart,
+    LineAllocation,
+    LineItem,
+    Phase,
+    PhaseSubtotals,
+)
 from app.engine import (
     EngineConfig,
     EngineInvariantError,
@@ -85,6 +92,20 @@ class TestGoldenCascade:
         assert result.discount_total_cents == 2825
         assert result.shipping_cents == 1000
         assert result.total_cents == 5675
+
+    def test_phase_subtotals_trace_the_cascade_boundaries(self) -> None:
+        """Catches the deals explainer narrating wrong intermediate numbers.
+
+        The checkout's "how deals work" walkthrough renders after-item and
+        after-cart subtotals verbatim; if the cascade stops recording them
+        (or records pre-discount values), the UI would tell shoppers a
+        cart percent was taken off the wrong base.
+        """
+        outcome = price_naive(golden_cart(), SEED_PROMOTIONS, set(SEED_IDS))
+        # 7500 - (1500 P1 + 500 P4) = 5500; 5500 - 825 P2 = 4675.
+        assert outcome.result.phase_subtotals == PhaseSubtotals(
+            after_item_cents=5500, after_cart_cents=4675
+        )
 
     def test_statuses_report_applied_claimed_and_available(self) -> None:
         """On the golden cart, every status lands per the spec's table.
