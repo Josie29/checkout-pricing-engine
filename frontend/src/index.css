@@ -420,11 +420,23 @@ button:disabled {
   color: var(--color-danger);
 }
 
-/* Promotions */
+/* Promotions — coupon cards with switches. Applied coupons get a caramel
+   edge and show their saving; claimed-but-inert ones dim. */
+.promo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.promo-head h2 {
+  margin: 0;
+}
+
 .promotion-bulk-actions {
   display: flex;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
 }
 
 .promotion-list {
@@ -435,77 +447,216 @@ button:disabled {
   gap: var(--space-2);
 }
 
-.promotion-item {
+.coupon {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }
 
-.promotion-label {
-  display: inline-flex;
+.coupon--applied {
+  border-left-color: var(--color-badge-bg);
+}
+
+.coupon--inert {
+  opacity: 0.7;
+}
+
+.coupon-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* The checkbox stays for semantics/focus; the switch is its visual. */
+.coupon-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.coupon-switch {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  background-color: var(--color-border);
+  position: relative;
+  transition: background-color 120ms ease-out;
+}
+
+.coupon-switch::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background-color: var(--color-card);
+  transition: transform 120ms ease-out;
+}
+
+.coupon-input:checked + .coupon-switch {
+  background-color: var(--color-accent);
+}
+
+.coupon-input:checked + .coupon-switch::after {
+  transform: translateX(0.875rem);
+}
+
+.coupon-input:focus-visible + .coupon-switch {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coupon-switch,
+  .coupon-switch::after {
+    transition: none;
+  }
+}
+
+.coupon-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.coupon-name {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.coupon-scope {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.coupon-saved {
+  font-weight: bold;
+  font-size: var(--font-size-sm);
+  color: var(--color-success);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.coupon-status {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* Price panel — a white receipt card: thumbnailed lines with green savings
+   chips and struck-through pre-discount subtotals, then the sums. */
+.receipt {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  box-shadow: var(--shadow-card);
+}
+
+.optimal-callout {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  background-color: var(--color-callout-bg);
+  border: 1px solid var(--color-callout-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-callout-text);
+}
+
+.receipt-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.receipt-line {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-surface);
 }
 
-.status-badge {
+.receipt-line-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.receipt-line-name {
   font-size: var(--font-size-sm);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
+  font-weight: 600;
 }
 
-.status-applied {
+.receipt-line-save {
+  font-size: 0.75rem;
   color: var(--color-success);
-  border: 1px solid var(--color-success);
+  background-color: var(--color-success-bg);
+  border-radius: 999px;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
 }
 
-.status-not-applied {
-  color: var(--color-text-muted);
-  border: 1px dashed var(--color-border);
-}
-
-/* Price panel */
-.price-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.price-table th {
-  text-align: left;
-  font-weight: normal;
-}
-
-.price-table th,
-.price-table td {
-  padding: var(--space-1) 0;
-}
-
-.price-table tfoot tr:first-child th,
-.price-table tfoot tr:first-child td {
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border);
-}
-
-.amount {
+.receipt-line-amount {
   text-align: right;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.discount {
+.receipt-line-amount s {
+  display: block;
+  font-weight: normal;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.receipt-sums {
+  margin-top: var(--space-2);
+}
+
+.receipt-sum {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.receipt-sum .amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.receipt-sum--discount {
   color: var(--color-success);
 }
 
-.line-discount {
-  font-size: var(--font-size-sm);
-  color: var(--color-success);
-}
-
-.total-row th,
-.total-row td {
+.receipt-sum--total {
   font-weight: bold;
   font-size: var(--font-size-lg);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
 }
 
-/* Per-promotion explanations under the breakdown table. */
+/* Per-promotion explanations under the sums. */
 .explanations {
   margin-top: var(--space-4);
   padding-top: var(--space-3);
@@ -514,7 +665,7 @@ button:disabled {
 
 .explanations h3 {
   margin: 0 0 var(--space-2);
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
 }
 
 .explanations > ul {
@@ -527,21 +678,15 @@ button:disabled {
 
 .explanation-summary {
   margin: 0;
+  font-size: var(--font-size-sm);
 }
 
 .explanation-lines {
   list-style: none;
   margin: 0;
   padding-left: var(--space-4);
-  font-size: var(--font-size-sm);
+  font-size: 0.75rem;
   color: var(--color-text-muted);
-}
-
-/* Mirrors the toggles' "applied" badge color to tie the surfaces together. */
-.optimal-note {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--color-success);
 }
 
 /* Dimmed while a newer price is in flight or the last request failed. */
