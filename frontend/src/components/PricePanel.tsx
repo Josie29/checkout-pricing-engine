@@ -128,14 +128,19 @@ export function PricePanel({
                   variant="thumb"
                 />
                 <span className="receipt-line-info">
-                  <span className="receipt-line-name">
-                    {line.qty} &times; {line.name ?? line.sku}
-                  </span>
-                  {line.discount_cents > 0 && (
-                    <span className="receipt-line-save">
-                      &minus;{formatCents(line.discount_cents)}
+                  <span className="receipt-line-top">
+                    <span className="receipt-line-name">
+                      {line.qty} &times; {line.name ?? line.sku}
                     </span>
-                  )}
+                    {line.discount_cents > 0 && (
+                      <span className="receipt-line-save">
+                        &minus;{formatCents(line.discount_cents)}
+                      </span>
+                    )}
+                  </span>
+                  {/* Category under the name ties the line to category-
+                      targeted deals like "Beans: buy 2 get 1 free". */}
+                  <span className="receipt-line-cat">{line.category}</span>
                 </span>
                 <span className="receipt-line-amount">
                   {line.discount_cents > 0 && (
