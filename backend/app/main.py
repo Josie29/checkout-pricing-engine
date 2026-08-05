@@ -1,5 +1,6 @@
 import os
 import re
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
@@ -179,6 +180,35 @@ def _next_promotion_id(existing_ids: set[str]) -> str:
     return f"P{highest + 1}"
 
 
+def _find_structural_duplicate(
+    candidate: Promotion, existing: Sequence[Promotion]
+) -> Promotion | None:
+    """Find a stored promotion with the candidate's exact type and terms.
+
+    Identity fields (`id`, `name`) are ignored — two promotions are
+    duplicates when the same kind targets the same thing with the same
+    parameters, which is shopper-facing noise (they share a conflict
+    cluster, so only one could ever apply). Enforced only on new adds:
+    boot replay never runs this, so any pre-existing duplicate keeps
+    loading.
+
+    Args:
+        candidate: The promotion being added.
+        existing: Every stored promotion, seeds and additions.
+
+    Returns:
+        The first structural duplicate, or None.
+    """
+    key = candidate.model_dump(exclude={"id", "name"})
+    for promotion in existing:
+        if (
+            type(promotion) is type(candidate)
+            and promotion.model_dump(exclude={"id", "name"}) == key
+        ):
+            return promotion
+    return None
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Report service liveness for deployment healthchecks.
@@ -286,8 +316,10 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
         it, with a 201 status.
 
     Raises:
-        HTTPException: 422 if the entry fails seed validation or reuses an
-            existing promotion id (seed or prior addition).
+        HTTPException: 422 if the entry fails seed validation, reuses an
+            existing promotion id (seed or prior addition), or structurally
+            duplicates an existing promotion (same kind, target, and
+            parameters — only id/name differing).
     """
     stored_entry = dict(entry)
     if stored_entry.get("id") is None:
@@ -303,6 +335,15 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
         promotion = parse_promotions([stored_entry])[0]
     except SeedLoadError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    duplicate = _find_structural_duplicate(promotion, PROMOTION_STORE.all())
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"duplicates existing promotion {duplicate.id!r}"
+                f" ({duplicate.name}) — same type, target, and terms"
+            ),
+        )
     try:
         PROMOTION_STORE.add(promotion, stored_entry)
     except DuplicatePromotionIdError as exc:
