@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { createPromotion } from '../api'
 import { parseDollarsToCents } from '../format'
 import { paramsLabel, scopeLabel } from '../promotionLabels'
+import { formatCents } from '../format'
 import type {
   CatalogItem,
   PromotionCreateRequest,
@@ -13,7 +14,7 @@ import type {
 
 /** Human labels for the five registered promotion kinds, in menu order. */
 const KIND_LABELS: Record<PromotionKind, string> = {
-  BXGY: 'Buy N, get one free',
+  BXGY: 'Buy N, get Y free',
   PCT_OFF_ITEM: 'Percent off an item',
   FIXED_OFF_ITEM: 'Fixed amount off an item',
   PCT_OFF_CART: 'Percent off the cart',
@@ -83,6 +84,11 @@ export function AdminPage({
 
   const [kind, setKind] = useState<PromotionKind>('BXGY')
   const [name, setName] = useState('')
+  // False while the Name shows the composed suggestion; typing takes over,
+  // clearing the field hands it back.
+  const [nameEdited, setNameEdited] = useState(false)
+  const [buyQty, setBuyQty] = useState('')
+  const [freeQty, setFreeQty] = useState('1')
   const [targetKind, setTargetKind] = useState<'category' | 'sku'>('category')
   const [category, setCategory] = useState(() => categories[0] ?? '')
   const [sku, setSku] = useState(() => catalog[0]?.sku ?? '')
@@ -100,15 +106,68 @@ export function AdminPage({
   const isItemKind = ITEM_KINDS.includes(kind)
 
   /**
+   * Compose the suggested promotion name from the structured fields, in
+   * the seed set's naming voice. Empty until the fields it needs parse.
+   *
+   * @returns The suggestion, or '' while the form is incomplete.
+   */
+  const suggestedName = (): string => {
+    const targetLabel =
+      targetKind === 'category' ? category : (productNames.get(sku) ?? sku)
+    switch (kind) {
+      case 'BXGY': {
+        const buy = parseIntInRange(buyQty, 1, Number.MAX_SAFE_INTEGER)
+        const free = parseIntInRange(freeQty, 1, Number.MAX_SAFE_INTEGER)
+        if (buy === null || free === null || targetLabel === '') {
+          return ''
+        }
+        return `${targetLabel}: buy ${buy} get ${free} free`
+      }
+      case 'PCT_OFF_ITEM': {
+        const percent = parseIntInRange(percentOff, 1, 100)
+        const qty = parseIntInRange(minQty, 1, Number.MAX_SAFE_INTEGER)
+        if (percent === null || qty === null || targetLabel === '') {
+          return ''
+        }
+        return `${targetLabel}: ${percent}% off${qty > 1 ? ` (min ${qty})` : ''}`
+      }
+      case 'FIXED_OFF_ITEM': {
+        const cents = parseDollarsToCents(amountOff)
+        if (cents === null || cents === 0 || targetLabel === '') {
+          return ''
+        }
+        return `${formatCents(cents)} off ${targetLabel}`
+      }
+      case 'PCT_OFF_CART': {
+        const percent = parseIntInRange(percentOff, 1, 100)
+        const cents = parseDollarsToCents(minSubtotal)
+        if (percent === null || cents === null) {
+          return ''
+        }
+        return `${percent}% off ${formatCents(cents)}+`
+      }
+      case 'FREE_SHIPPING': {
+        const cents = parseDollarsToCents(minSubtotal)
+        if (cents === null) {
+          return ''
+        }
+        return `Free shipping ${formatCents(cents)}+`
+      }
+    }
+  }
+
+  const effectiveName = nameEdited ? name : suggestedName()
+
+  /**
    * Assemble the seed-entry body for the current form state. Dollar inputs
    * convert to integer cents with string math — never floats.
    *
    * @returns The request body, or a message describing the first problem.
    */
   const buildEntry = (): PromotionCreateRequest | string => {
-    const trimmedName = name.trim()
+    const trimmedName = effectiveName.trim()
     if (trimmedName === '') {
-      return 'Name is required.'
+      return 'Name is required — fill the fields or type one.'
     }
 
     let target: PromotionTarget
@@ -134,7 +193,20 @@ export function AdminPage({
       target,
     }
 
-    if (kind === 'BXGY' || kind === 'PCT_OFF_ITEM') {
+    if (kind === 'BXGY') {
+      const buy = parseIntInRange(buyQty, 1, Number.MAX_SAFE_INTEGER)
+      const free = parseIntInRange(freeQty, 1, Number.MAX_SAFE_INTEGER)
+      if (buy === null) {
+        return 'Buy quantity must be a whole number of at least 1.'
+      }
+      if (free === null) {
+        return 'Free quantity must be a whole number of at least 1.'
+      }
+      // The API's min_qty is the whole buy-N-plus-Y total.
+      entry.min_qty = buy + free
+      entry.free_qty = free
+    }
+    if (kind === 'PCT_OFF_ITEM') {
       const qty = parseIntInRange(minQty, 1, Number.MAX_SAFE_INTEGER)
       if (qty === null) {
         return 'Min quantity must be a whole number of at least 1.'
@@ -184,6 +256,9 @@ export function AdminPage({
           `Added ${promotion.id} · "${promotion.name}" — it now appears in the shop and checkout.`,
         )
         setName('')
+        setNameEdited(false)
+        setBuyQty('')
+        setFreeQty('1')
         setMinQty('')
         setPercentOff('')
         setAmountOff('')
@@ -236,11 +311,18 @@ export function AdminPage({
             <label className="admin-field">
               <span>Name</span>
               <input
-                value={name}
-                required
-                onChange={(event) => setName(event.target.value)}
+                value={effectiveName}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setName(next)
+                  // An emptied field hands naming back to the suggestion.
+                  setNameEdited(next !== '')
+                }}
               />
             </label>
+            <p className="admin-field-hint">
+              Composed from the fields below — edit to override.
+            </p>
 
             {isItemKind && (
               <fieldset className="admin-target">
@@ -305,7 +387,34 @@ export function AdminPage({
               </p>
             )}
 
-            {(kind === 'BXGY' || kind === 'PCT_OFF_ITEM') && (
+            {kind === 'BXGY' && (
+              <div className="admin-field-row">
+                <label className="admin-field">
+                  <span>Buy quantity (N)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    required
+                    value={buyQty}
+                    onChange={(event) => setBuyQty(event.target.value)}
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>Get free (Y)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    required
+                    value={freeQty}
+                    onChange={(event) => setFreeQty(event.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+
+            {kind === 'PCT_OFF_ITEM' && (
               <label className="admin-field">
                 <span>Min quantity</span>
                 <input

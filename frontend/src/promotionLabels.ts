@@ -42,6 +42,9 @@ export function paramsLabel(params: Record<string, number>): string {
   if (params.amount_off_cents !== undefined) {
     parts.push(`${formatCents(params.amount_off_cents)} off`)
   }
+  if (params.free_qty !== undefined) {
+    parts.push(`${params.free_qty} free`)
+  }
   if (params.min_qty !== undefined) {
     parts.push(`min ${params.min_qty}`)
   }
