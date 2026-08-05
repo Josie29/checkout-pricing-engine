@@ -148,6 +148,19 @@ export function CheckoutPage({
     failure.claimedIds === claimedIds
   const priceLoading = !priceCurrent && !failureCurrent
 
+  // Cents saved per applied promotion, read off the response's adjustments
+  // (like statuses, may briefly lag the toggles while a reprice is in
+  // flight — the panel's stale marking covers both).
+  const savedCents =
+    priced === null
+      ? null
+      : Object.fromEntries(
+          priced.response.adjustments.map((adjustment) => [
+            adjustment.promotion_id,
+            adjustment.amount_cents,
+          ]),
+        )
+
   return (
     <>
       <BackToShopLink onBackToShop={onBackToShop} />
@@ -157,6 +170,7 @@ export function CheckoutPage({
             promotions={promotions}
             claimedIds={claimedIds}
             statuses={priced?.response.promotion_statuses ?? null}
+            savedCents={savedCents}
             onToggle={onToggle}
             onSetAllClaimed={onSetAllClaimed}
             pricePending={priceLoading}
