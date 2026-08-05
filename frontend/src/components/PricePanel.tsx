@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import type { Adjustment, Phase, PhaseSubtotals, PriceResponse } from '../types'
+import type { Adjustment, Phase, PriceResponse } from '../types'
 import { formatCents } from '../format'
 import { ProductImage } from './ProductImage'
 
@@ -55,101 +54,6 @@ function Explanation({ adjustment, lineNames }: ExplanationProps) {
   )
 }
 
-interface HowItWorksProps {
-  price: PriceResponse
-  /** The response's cascade-boundary subtotals (present on new servers). */
-  subtotals: PhaseSubtotals
-}
-
-/**
- * The expanded "See how" walkthrough: the three pricing rounds narrated
- * with this cart's own numbers. Every amount is rendered verbatim from the
- * response (`adjustments` split by phase, plus the cascade-boundary
- * subtotals) — no client-side pricing.
- */
-function HowItWorks({ price, subtotals }: HowItWorksProps) {
-  const ofPhase = (phase: Phase): Adjustment[] =>
-    price.adjustments.filter((adjustment) => adjustment.phase === phase)
-  const itemDeals = ofPhase('item')
-  const cartDeals = ofPhase('cart')
-  const shippingDeals = ofPhase('shipping')
-  return (
-    <div className="how-steps">
-      <div className="how-step">
-        <span className="how-step-num" aria-hidden="true">
-          1
-        </span>
-        <div>
-          <p>
-            {itemDeals.length > 0
-              ? 'Item deals came first, off original prices:'
-              : 'No item deals applied, so items kept their original prices.'}
-          </p>
-          {itemDeals.length > 0 && (
-            <ul>
-              {itemDeals.map((deal) => (
-                <li key={deal.promotion_id}>
-                  {`${deal.promotion_name} — ${formatCents(deal.amount_cents)} off`}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-      <div className="how-step">
-        <span className="how-step-num" aria-hidden="true">
-          2
-        </span>
-        <div>
-          <p>
-            {`Cart deals ran next, on the discounted items total of ${formatCents(subtotals.after_item_cents)}.`}
-          </p>
-          {cartDeals.length > 0 ? (
-            <ul>
-              {cartDeals.map((deal) => (
-                <li key={deal.promotion_id}>
-                  {`${deal.promotion_name} — ${formatCents(deal.amount_cents)} off`}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="how-quiet">No cart deal applied.</p>
-          )}
-        </div>
-      </div>
-      <div className="how-step">
-        <span className="how-step-num" aria-hidden="true">
-          3
-        </span>
-        <div>
-          <p>
-            {`Shipping came last, checked against the after-deals total of ${formatCents(subtotals.after_cart_cents)}.`}
-          </p>
-          {shippingDeals.length > 0 ? (
-            <ul>
-              {shippingDeals.map((deal) => (
-                <li key={deal.promotion_id}>
-                  {`${deal.promotion_name} — ${formatCents(deal.amount_cents)} off`}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="how-quiet">
-              {`Shipping charged: ${formatCents(price.shipping_cents)}.`}
-            </p>
-          )}
-        </div>
-      </div>
-      <p className="how-rules">
-        Deals that overlap on the same items never stack — at most one wins per
-        group, plus one cart deal and one shipping deal. Every allowed
-        combination of your switched-on deals was priced (even skipping some),
-        and the cheapest total won.
-      </p>
-    </div>
-  )
-}
-
 /**
  * Receipt-card price breakdown rendered verbatim from the latest
  * `POST /price` response — every amount comes from the API's integer cents,
@@ -166,8 +70,6 @@ export function PricePanel({
   failure,
   onRetry,
 }: PricePanelProps) {
-  // The callout's "See how" walkthrough; collapsed by default.
-  const [howOpen, setHowOpen] = useState(false)
   const stale = loading || failure !== null
   // 422 means the request itself was rejected — retrying the same inputs
   // cannot succeed, so surface the server's detail without a Retry button.
@@ -208,29 +110,15 @@ export function PricePanel({
       ) : price === null ? null : (
         <div className={stale ? 'receipt price-stale' : 'receipt'}>
           {price.optimal && price.adjustments.length > 0 && (
-            <div className="optimal-callout">
-              <p className="optimal-callout-line">
-                <strong>Best combination applied</strong>
-                {` — you save ${formatCents(price.discount_total_cents)}.`}
-                {/* Echo the coupons' "not applied" hint so the two surfaces
-                    read as one explanation. */}
-                {Object.values(price.promotion_statuses).includes('claimed') &&
-                  ' Deals marked "not applied" would not save more.'}{' '}
-                {price.phase_subtotals != null && (
-                  <button
-                    type="button"
-                    className="how-toggle"
-                    aria-expanded={howOpen}
-                    onClick={() => setHowOpen((open) => !open)}
-                  >
-                    {howOpen ? 'Hide' : 'See how'}
-                  </button>
-                )}
-              </p>
-              {howOpen && price.phase_subtotals != null && (
-                <HowItWorks price={price} subtotals={price.phase_subtotals} />
-              )}
-            </div>
+            <p className="optimal-callout">
+              <strong>Best combination applied</strong>
+              {` — you save ${formatCents(price.discount_total_cents)}.`}
+              {/* Echo the coupons' "not applied" hint so the two surfaces
+                  read as one explanation; the full walkthrough lives in the
+                  deals column's "How deals work" row. */}
+              {Object.values(price.promotion_statuses).includes('claimed') &&
+                ' Deals marked "not applied" would not save more.'}
+            </p>
           )}
           <ul className="receipt-lines">
             {price.lines.map((line) => (
