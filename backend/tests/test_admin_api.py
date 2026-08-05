@@ -207,6 +207,33 @@ class TestStructuralDuplicates:
         assert response.status_code == 201
 
 
+class TestDeletePromotion:
+    """DELETE /promotions/{id} — the admin list's remove control."""
+
+    def test_delete_removes_the_addition_and_persists(self, db_path: Path) -> None:
+        """Catches a deleted promotion lingering or resurrecting.
+
+        After a 204 the list must not show the addition, and a restarted
+        store must not replay it.
+        """
+        assert client.post("/promotions", json=_MUG_FIXED_OFF).status_code == 201
+        response = client.delete("/promotions/A1")
+        assert response.status_code == 204
+        assert [promo["id"] for promo in client.get("/promotions").json()] == SEED_IDS
+        assert [promo.id for promo in _restarted_store(db_path).all()] == SEED_IDS
+
+    def test_deleting_a_seed_is_422(self) -> None:
+        """Catches the immutable seed set becoming editable via the API."""
+        response = client.delete("/promotions/P1")
+        assert response.status_code == 422
+        assert "seed" in response.json()["detail"]
+        assert [promo["id"] for promo in client.get("/promotions").json()] == SEED_IDS
+
+    def test_deleting_an_unknown_id_is_404(self) -> None:
+        """Catches unknown ids masquerading as successful deletes."""
+        assert client.delete("/promotions/NOPE").status_code == 404
+
+
 class TestAutoAssignedIds:
     """POST /promotions without an id — the server assigns the next P<n>."""
 

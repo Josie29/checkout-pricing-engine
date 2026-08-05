@@ -111,6 +111,17 @@ function App() {
     setClaimedIds(ids)
   }
 
+  const removePromotion = (id: string) => {
+    // Drop it from signage/toggles and un-claim it, so the checkout's next
+    // POST /price never references the deleted id (which would 422).
+    setPromotions((existing) =>
+      existing === null
+        ? existing
+        : existing.filter((promotion) => promotion.id !== id),
+    )
+    setClaimedIds((ids) => ids.filter((existing) => existing !== id))
+  }
+
   const addPromotion = (promotion: PromotionInfo) => {
     // Append the 201 body — GET /promotions lists seeds then additions, so
     // this matches what a refetch would return. Shop signage and checkout
@@ -187,6 +198,7 @@ function App() {
             catalog={catalog}
             promotions={promotions}
             onCreated={addPromotion}
+            onDeleted={removePromotion}
             onBackToShop={() => navigate('shop')}
           />
         ) : route === 'checkout' ? (

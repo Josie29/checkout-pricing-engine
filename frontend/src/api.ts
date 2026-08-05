@@ -58,19 +58,31 @@ function formatDetail(detail: unknown): string {
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, init)
-  if (!response.ok) {
-    let detail = `Request failed (${response.status})`
-    try {
-      const body: unknown = await response.json()
-      if (body !== null && typeof body === 'object' && 'detail' in body) {
-        detail = formatDetail((body as { detail: unknown }).detail)
-      }
-    } catch {
-      // Non-JSON error body — keep the generic status message.
-    }
-    throw new ApiError(response.status, detail)
-  }
+  await throwUnlessOk(response)
   return (await response.json()) as T
+}
+
+/**
+ * Throw an `ApiError` carrying the server's `detail` for a non-2xx
+ * response; resolve silently otherwise.
+ *
+ * @param response - The fetch response to check.
+ * @throws {ApiError} On any non-2xx response.
+ */
+async function throwUnlessOk(response: Response): Promise<void> {
+  if (response.ok) {
+    return
+  }
+  let detail = `Request failed (${response.status})`
+  try {
+    const body: unknown = await response.json()
+    if (body !== null && typeof body === 'object' && 'detail' in body) {
+      detail = formatDetail((body as { detail: unknown }).detail)
+    }
+  } catch {
+    // Non-JSON error body — keep the generic status message.
+  }
+  throw new ApiError(response.status, detail)
 }
 
 /**
@@ -131,4 +143,18 @@ export function postPrice(
     body: JSON.stringify(body),
     signal,
   })
+}
+
+/**
+ * Remove one runtime-added promotion (204, no body — not `request()`).
+ *
+ * @param id - The promotion id to delete.
+ * @throws {ApiError} On any non-2xx response (404 unknown id, 422 seed).
+ */
+export async function deletePromotion(id: string): Promise<void> {
+  const response = await fetch(
+    `${BASE_URL}/promotions/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  await throwUnlessOk(response)
 }

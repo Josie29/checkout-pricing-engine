@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { createPromotion } from '../api'
+import { createPromotion, deletePromotion } from '../api'
 import { parseDollarsToCents } from '../format'
 import { paramsLabel, scopeLabel } from '../promotionLabels'
 import { formatCents } from '../format'
@@ -53,6 +53,8 @@ interface AdminPageProps {
   promotions: PromotionInfo[]
   /** Called with the 201 body so the owner can append it to its list. */
   onCreated: (promotion: PromotionInfo) => void
+  /** Called with a deleted promotion's id so the owner can drop it. */
+  onDeleted: (id: string) => void
   /** Navigate back to the shop page. */
   onBackToShop: () => void
 }
@@ -69,6 +71,7 @@ export function AdminPage({
   catalog,
   promotions,
   onCreated,
+  onDeleted,
   onBackToShop,
 }: AdminPageProps) {
   // Distinct categories present in the catalog (Set spread dedupes).
@@ -100,6 +103,24 @@ export function AdminPage({
   const [pending, setPending] = useState(false)
   // Id of the most recent addition this visit — highlighted in the list.
   const [lastCreatedId, setLastCreatedId] = useState<string | null>(null)
+  // Id with a DELETE in flight (disables that row's Remove button).
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const handleDelete = (id: string) => {
+    setDeletingId(id)
+    setDeleteError(null)
+    deletePromotion(id)
+      .then(() => {
+        onDeleted(id)
+      })
+      .catch((cause: unknown) => {
+        setDeleteError(cause instanceof Error ? cause.message : String(cause))
+      })
+      .finally(() => {
+        setDeletingId(null)
+      })
+  }
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -499,6 +520,11 @@ export function AdminPage({
           <p className="muted admin-note">
             Live list — exactly what shoppers can claim at checkout.
           </p>
+          {deleteError !== null && (
+            <p className="error" role="alert">
+              {deleteError}
+            </p>
+          )}
           <ul className="promo-list">
             {promotions.map((promotion) => {
               const scope = scopeLabel(promotion.target, productNames)
@@ -530,6 +556,17 @@ export function AdminPage({
                     >
                       {added ? 'added' : 'seed'}
                     </span>
+                  )}
+                  {added && (
+                    <button
+                      type="button"
+                      className="remove-button"
+                      disabled={deletingId === promotion.id}
+                      aria-label={`Remove ${promotion.name}`}
+                      onClick={() => handleDelete(promotion.id)}
+                    >
+                      Remove
+                    </button>
                   )}
                 </li>
               )
