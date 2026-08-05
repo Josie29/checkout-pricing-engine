@@ -51,6 +51,7 @@ const BASE_PRICE: PriceResponse = {
   shipping_cents: 700,
   total_cents: 5500,
   optimal: true,
+  phase_subtotals: { after_item_cents: 4800, after_cart_cents: 4800 },
   promotion_statuses: { P1: 'available' },
 }
 
@@ -82,6 +83,7 @@ const DISCOUNTED_PRICE: PriceResponse = {
   shipping_cents: 700,
   total_cents: 3900,
   optimal: true,
+  phase_subtotals: { after_item_cents: 3200, after_cart_cents: 3200 },
   promotion_statuses: { P1: 'applied' },
 }
 
@@ -156,6 +158,16 @@ test('shop builds the cart and checkout renders the priced response', async () =
   ).toBeDefined()
   expect(
     screen.getByText('$16.00 off Ethiopia Yirgacheffe, 12oz'),
+  ).toBeDefined()
+
+  // "See how" expands the walkthrough, narrating the cascade with the
+  // response's phase subtotals — catches the explainer rendering the wrong
+  // base for cart deals (the raw subtotal instead of the discounted one).
+  fireEvent.click(screen.getByRole('button', { name: 'See how' }))
+  expect(
+    screen.getByText(
+      'Cart deals ran next, on the discounted items total of $32.00.',
+    ),
   ).toBeDefined()
 
   // Unclaiming P1 reprices to the base total.

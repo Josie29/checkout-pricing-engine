@@ -58,6 +58,12 @@ class TestPrice:
         assert body["discount_total_cents"] == 2925
         assert body["shipping_cents"] == 1000
         assert body["total_cents"] == 5675
+        # Additive cascade-boundary trace for the checkout deals explainer:
+        # catches the API dropping the engine's intermediate subtotals.
+        assert body["phase_subtotals"] == {
+            "after_item_cents": 5500,
+            "after_cart_cents": 4675,
+        }
         # The naive pick is also the optimum on this cart (bigger item
         # discounts only help P2), so the optimizer's result comes back
         # with identical numbers, now labeled optimal.

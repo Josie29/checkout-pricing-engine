@@ -3,6 +3,8 @@ import { formatCents } from '../format'
 
 interface PromotionTogglesProps {
   promotions: PromotionInfo[]
+  /** Catalog sku -> display name, for readable SKU-targeted scope lines. */
+  productNames: ReadonlyMap<string, string>
   claimedIds: readonly string[]
   /** Statuses from the latest `POST /price` response; null before any price. */
   statuses: Record<string, PromotionStatus> | null
@@ -21,17 +23,22 @@ interface PromotionTogglesProps {
 
 /**
  * Scope line under a coupon's name, read directly off the promotion's
- * phase/target metadata (no eligibility or amount logic).
+ * phase/target metadata (no eligibility or amount logic). SKU targets
+ * resolve to the catalog product name so shoppers never read raw SKUs.
  *
  * @param target - The promotion's target.
+ * @param productNames - Catalog sku -> display name lookup.
  * @returns A short human label like "item deal · Coffee Beans".
  */
-function scopeLabel(target: PromotionTarget): string {
+function scopeLabel(
+  target: PromotionTarget,
+  productNames: ReadonlyMap<string, string>,
+): string {
   switch (target.kind) {
     case 'category':
       return `item deal · ${target.category}`
     case 'sku':
-      return `item deal · ${target.sku}`
+      return `item deal · ${productNames.get(target.sku) ?? target.sku}`
     case 'cart':
       return 'whole-cart deal'
     case 'shipping':
@@ -49,6 +56,7 @@ function scopeLabel(target: PromotionTarget): string {
  */
 export function PromotionToggles({
   promotions,
+  productNames,
   claimedIds,
   statuses,
   savedCents,
@@ -117,7 +125,7 @@ export function PromotionToggles({
                 <span className="coupon-info">
                   <span className="coupon-name">{promotion.name}</span>
                   <span className="coupon-scope">
-                    {scopeLabel(promotion.target)}
+                    {scopeLabel(promotion.target, productNames)}
                   </span>
                 </span>
               </label>
