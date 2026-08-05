@@ -163,6 +163,50 @@ class TestAddPromotion:
         assert "SKU or category target" in response.json()["detail"]
 
 
+class TestStructuralDuplicates:
+    """POST /promotions rejects re-authored copies of existing deals.
+
+    A duplicate means the same type, target, and parameters — only id and
+    name differing.
+    """
+
+    def test_duplicate_of_a_seed_is_422_naming_the_original(self) -> None:
+        """Catches twin deals: re-authoring an existing deal must 422.
+
+        The detail names the original so the admin can find it.
+        """
+        response = client.post(
+            "/promotions",
+            json={
+                "type": "BXGY",
+                "name": "Beans again",
+                "target": {"kind": "category", "category": "Coffee Beans"},
+                "min_qty": 3,
+                "free_qty": 1,
+            },
+        )
+        assert response.status_code == 422
+        assert "'P1'" in response.json()["detail"]
+
+    def test_different_terms_are_not_duplicates(self) -> None:
+        """Catches over-eager matching.
+
+        The same kind and target with a different threshold is a distinct
+        deal and must store.
+        """
+        response = client.post(
+            "/promotions",
+            json={
+                "type": "BXGY",
+                "name": "Coffee Beans: buy 4 get 1 free",
+                "target": {"kind": "category", "category": "Coffee Beans"},
+                "min_qty": 5,
+                "free_qty": 1,
+            },
+        )
+        assert response.status_code == 201
+
+
 class TestAutoAssignedIds:
     """POST /promotions without an id — the server assigns the next P<n>."""
 
@@ -186,7 +230,11 @@ class TestAutoAssignedIds:
         """Catches the generator reusing a number a prior addition took."""
         entry = {key: value for key, value in _MUG_FIXED_OFF.items() if key != "id"}
         first = client.post("/promotions", json=entry)
-        second = client.post("/promotions", json={**entry, "name": "Mug deal 2"})
+        # Different terms — a second structural duplicate would now 422.
+        second = client.post(
+            "/promotions",
+            json={**entry, "name": "Mug deal 2", "amount_off_cents": 300},
+        )
         assert [first.json()["id"], second.json()["id"]] == ["P8", "P9"]
 
     def test_explicit_id_is_still_accepted(self) -> None:
