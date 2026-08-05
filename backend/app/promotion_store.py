@@ -87,6 +87,15 @@ class PromotionStore:
         with self._lock:
             return [*self._seeds, *self._additions]
 
+    def addition_ids(self) -> set[str]:
+        """Ids of runtime additions (vs seeds), for API source labeling.
+
+        Returns:
+            A fresh set — callers may not mutate store state through it.
+        """
+        with self._lock:
+            return {promotion.id for promotion in self._additions}
+
     def add(self, promotion: Promotion, entry: Mapping[str, object]) -> None:
         """Add a runtime promotion after the seeds and prior additions.
 

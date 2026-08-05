@@ -1,5 +1,6 @@
-import type { PromotionInfo, PromotionStatus, PromotionTarget } from '../types'
+import type { PromotionInfo, PromotionStatus } from '../types'
 import { formatCents } from '../format'
+import { scopeLabel } from '../promotionLabels'
 
 interface PromotionTogglesProps {
   promotions: PromotionInfo[]
@@ -19,31 +20,6 @@ interface PromotionTogglesProps {
   onSetAllClaimed: (ids: string[]) => void
   /** True while a `POST /price` is pending; bulk buttons are disabled. */
   pricePending: boolean
-}
-
-/**
- * Scope line under a coupon's name, read directly off the promotion's
- * phase/target metadata (no eligibility or amount logic). SKU targets
- * resolve to the catalog product name so shoppers never read raw SKUs.
- *
- * @param target - The promotion's target.
- * @param productNames - Catalog sku -> display name lookup.
- * @returns A short human label like "item deal · Coffee Beans".
- */
-function scopeLabel(
-  target: PromotionTarget,
-  productNames: ReadonlyMap<string, string>,
-): string {
-  switch (target.kind) {
-    case 'category':
-      return `item deal · ${target.category}`
-    case 'sku':
-      return `item deal · ${productNames.get(target.sku) ?? target.sku}`
-    case 'cart':
-      return 'whole-cart deal'
-    case 'shipping':
-      return 'shipping deal'
-  }
 }
 
 /**

@@ -308,6 +308,7 @@ class TestPromotions:
             "phase": "item",
             "target": {"kind": "category", "category": "Coffee Beans"},
             "params": {"min_qty": 3},
+            "source": "seed",
         }
         # Engine-injected mechanics (the shipping baseline) are not promotion
         # display data and must not leak into the list.
@@ -318,6 +319,7 @@ class TestPromotions:
             "phase": "shipping",
             "target": {"kind": "shipping"},
             "params": {"min_subtotal_cents": 10000},
+            "source": "seed",
         }
 
 
