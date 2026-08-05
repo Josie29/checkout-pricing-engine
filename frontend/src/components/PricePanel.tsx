@@ -1,5 +1,6 @@
 import type { Adjustment, Phase, PriceResponse } from '../types'
 import { formatCents } from '../format'
+import { ProductImage } from './ProductImage'
 
 interface PricePanelProps {
   /** Latest priced result; null when the cart is empty or nothing priced yet. */
@@ -54,9 +55,11 @@ function Explanation({ adjustment, lineNames }: ExplanationProps) {
 }
 
 /**
- * Itemized price breakdown rendered verbatim from the latest `POST /price`
- * response — every amount comes from the API's integer cents, nothing is
- * computed client-side. While a newer price is loading or the last request
+ * Receipt-card price breakdown rendered verbatim from the latest
+ * `POST /price` response — every amount comes from the API's integer cents,
+ * nothing is computed client-side. Lines carry thumbnails, struck-through
+ * pre-discount subtotals, and green savings chips; the optimizer note is a
+ * callout at the top. While a newer price is loading or the last request
  * failed, the panel is explicitly marked so stale numbers are never
  * presented as current; failures offer a Retry.
  */
@@ -77,7 +80,7 @@ export function PricePanel({
   )
   return (
     <section aria-labelledby="price-heading" aria-busy={loading}>
-      <h2 id="price-heading">Price</h2>
+      <h2 id="price-heading">Your order</h2>
       {loading && (
         <p className="muted" role="status">
           Updating&hellip;
@@ -105,63 +108,73 @@ export function PricePanel({
       {cartEmpty ? (
         <p className="muted">Add items to the cart to see a price.</p>
       ) : price === null ? null : (
-        <div className={stale ? 'price-stale' : undefined}>
-          <table className="price-table">
-            <tbody>
-              {price.lines.map((line) => (
-                <tr key={line.sku}>
-                  <th scope="row">
+        <div className={stale ? 'receipt price-stale' : 'receipt'}>
+          {price.optimal && price.adjustments.length > 0 && (
+            <p className="optimal-callout">
+              <strong>Best combination applied</strong>
+              {` — you save ${formatCents(price.discount_total_cents)}.`}
+              {/* Echo the coupons' "not applied" hint so the two surfaces
+                  read as one explanation. */}
+              {Object.values(price.promotion_statuses).includes('claimed') &&
+                ' Deals marked "not applied" would not save more.'}
+            </p>
+          )}
+          <ul className="receipt-lines">
+            {price.lines.map((line) => (
+              <li key={line.sku} className="receipt-line">
+                <ProductImage
+                  sku={line.sku}
+                  name={line.name ?? line.sku}
+                  variant="thumb"
+                />
+                <span className="receipt-line-info">
+                  <span className="receipt-line-name">
                     {line.qty} &times; {line.name ?? line.sku}
-                    {line.discount_cents > 0 && (
-                      <span className="line-discount">
-                        {' '}
-                        &minus;{formatCents(line.discount_cents)} off{' '}
-                        {formatCents(line.line_subtotal_cents)}
-                      </span>
-                    )}
-                  </th>
-                  <td className="amount">
-                    {formatCents(line.line_total_cents)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">Subtotal</th>
-                <td className="amount">{formatCents(price.subtotal_cents)}</td>
-              </tr>
-              {price.discount_total_cents > 0 && (
-                <tr>
-                  <th scope="row">Discounts</th>
-                  <td className="amount discount">
-                    &minus;{formatCents(price.discount_total_cents)}
-                  </td>
-                </tr>
-              )}
-              <tr>
-                <th scope="row">Shipping</th>
-                <td className="amount">{formatCents(price.shipping_cents)}</td>
-              </tr>
-              <tr className="total-row">
-                <th scope="row">Total</th>
-                <td className="amount">{formatCents(price.total_cents)}</td>
-              </tr>
-            </tfoot>
-          </table>
+                  </span>
+                  {line.discount_cents > 0 && (
+                    <span className="receipt-line-save">
+                      &minus;{formatCents(line.discount_cents)}
+                    </span>
+                  )}
+                </span>
+                <span className="receipt-line-amount">
+                  {line.discount_cents > 0 && (
+                    <s>{formatCents(line.line_subtotal_cents)}</s>
+                  )}
+                  {formatCents(line.line_total_cents)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="receipt-sums">
+            <div className="receipt-sum">
+              <span>Subtotal</span>
+              <span className="amount">
+                {formatCents(price.subtotal_cents)}
+              </span>
+            </div>
+            {price.discount_total_cents > 0 && (
+              <div className="receipt-sum receipt-sum--discount">
+                <span>Deals</span>
+                <span className="amount">
+                  &minus;{formatCents(price.discount_total_cents)}
+                </span>
+              </div>
+            )}
+            <div className="receipt-sum">
+              <span>Shipping</span>
+              <span className="amount">
+                {formatCents(price.shipping_cents)}
+              </span>
+            </div>
+            <div className="receipt-sum receipt-sum--total">
+              <span>Total</span>
+              <span className="amount">{formatCents(price.total_cents)}</span>
+            </div>
+          </div>
           {price.adjustments.length > 0 && (
             <div className="explanations">
-              <h3 id="explanations-heading">Applied promotions</h3>
-              {price.optimal && (
-                <p className="optimal-note">
-                  Best combination applied
-                  {/* Echo the toggles' "not applied" badge wording so the
-                      two surfaces read as one explanation. */}
-                  {Object.values(price.promotion_statuses).includes('claimed')
-                    ? ' — promotions marked "not applied" would not save more.'
-                    : '.'}
-                </p>
-              )}
+              <h3 id="explanations-heading">How your deals applied</h3>
               <ul aria-labelledby="explanations-heading">
                 {price.adjustments.map((adjustment) => (
                   <Explanation
