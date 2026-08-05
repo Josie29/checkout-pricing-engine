@@ -119,3 +119,63 @@ test('form posts the seed entry with dollars as integer cents and reports succes
   // Submitting cleared the name for the next entry.
   expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('')
 })
+
+/*
+ * Catches the auto-composed name breaking: the Name field must fill itself
+ * from the structured fields (and be what actually posts), or the admin
+ * silently ships promotions named ''.
+ */
+test('name auto-composes from the fields and posts unless overridden', async () => {
+  const created: PromotionInfo = {
+    id: 'P9',
+    name: '15% off $50.00+',
+    type: 'PCT_OFF_CART',
+    phase: 'cart',
+    target: { kind: 'cart' },
+    params: { percent_off: 15, min_subtotal_cents: 5000 },
+    source: 'runtime',
+  }
+  const fetchMock = vi.fn<
+    (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+  >(() =>
+    Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve(created),
+    } as unknown as Response),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+
+  render(
+    <AdminPage
+      catalog={CATALOG}
+      promotions={[]}
+      onCreated={() => {}}
+      onBackToShop={() => {}}
+    />,
+  )
+
+  fireEvent.change(screen.getByLabelText('Type'), {
+    target: { value: 'PCT_OFF_CART' },
+  })
+  fireEvent.change(screen.getByLabelText('Percent off'), {
+    target: { value: '15' },
+  })
+  fireEvent.change(screen.getByLabelText('Min subtotal ($)'), {
+    target: { value: '50' },
+  })
+  // The suggestion appears in the field itself — what you see is what posts.
+  expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe(
+    '15% off $50.00+',
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Add promotion' }))
+  expect(await screen.findByText(/Added P9/)).toBeDefined()
+  const [, init] = fetchMock.mock.calls[0] ?? []
+  expect(JSON.parse(String(init?.body))).toEqual({
+    type: 'PCT_OFF_CART',
+    name: '15% off $50.00+',
+    target: { kind: 'cart' },
+    percent_off: 15,
+    min_subtotal_cents: 5000,
+  })
+})

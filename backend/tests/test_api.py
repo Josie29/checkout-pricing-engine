@@ -307,7 +307,7 @@ class TestPromotions:
             "type": "BXGY",
             "phase": "item",
             "target": {"kind": "category", "category": "Coffee Beans"},
-            "params": {"min_qty": 3},
+            "params": {"min_qty": 3, "free_qty": 1},
             "source": "seed",
         }
         # Engine-injected mechanics (the shipping baseline) are not promotion
