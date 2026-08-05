@@ -99,7 +99,8 @@ export type PromotionKind =
  */
 export interface PromotionCreateRequest {
   type: PromotionKind
-  id: string
+  /** Omitted, the server assigns the next free P<n> and returns it. */
+  id?: string
   name: string
   target: PromotionTarget
   min_qty?: number
@@ -107,6 +108,9 @@ export interface PromotionCreateRequest {
   amount_off_cents?: number
   min_subtotal_cents?: number
 }
+
+/** Where a stored promotion came from — file seeds or the admin API. */
+export type PromotionSource = 'seed' | 'runtime'
 
 /** One `GET /promotions` entry, in seed order. */
 export interface PromotionInfo {
@@ -116,4 +120,6 @@ export interface PromotionInfo {
   phase: Phase
   target: PromotionTarget
   params: Record<string, number>
+  /** Additive field; older servers omit it. */
+  source?: PromotionSource
 }

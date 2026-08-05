@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createPromotion } from '../api'
 import { parseDollarsToCents } from '../format'
+import { paramsLabel, scopeLabel } from '../promotionLabels'
 import type {
   CatalogItem,
   PromotionCreateRequest,
@@ -47,6 +48,8 @@ function parseIntInRange(raw: string, min: number, max: number): number | null {
 interface AdminPageProps {
   /** The already-fetched catalog — source of the target dropdowns. */
   catalog: CatalogItem[]
+  /** Every stored promotion (seeds + additions), for the reference list. */
+  promotions: PromotionInfo[]
   /** Called with the 201 body so the owner can append it to its list. */
   onCreated: (promotion: PromotionInfo) => void
   /** Navigate back to the shop page. */
@@ -55,13 +58,15 @@ interface AdminPageProps {
 
 /**
  * The admin page (`/admin`): an add-promotion form posting one seed-entry
- * body to `POST /promotions`. Client-side checks are the cheap ones only
- * (fields present, numeric ranges); real validation — duplicate ids, target
- * scoping — is the server's 422, surfaced inline. Additions are in-memory
- * only and the page is unauthenticated by scope.
+ * body to `POST /promotions`, beside the live promotion list for
+ * reference. Ids are server-assigned; client-side checks are the cheap
+ * ones only (fields present, numeric ranges) — real validation is the
+ * server's 422, surfaced inline. Additions persist (SQLite, issue #75);
+ * the page is unauthenticated by scope.
  */
 export function AdminPage({
   catalog,
+  promotions,
   onCreated,
   onBackToShop,
 }: AdminPageProps) {
@@ -70,9 +75,13 @@ export function AdminPage({
     () => [...new Set(catalog.map((item) => item.category))],
     [catalog],
   )
+  // Sku -> name lookup for readable SKU-targeted scope lines in the list.
+  const productNames = useMemo(
+    () => new Map(catalog.map((item) => [item.sku, item.name])),
+    [catalog],
+  )
 
   const [kind, setKind] = useState<PromotionKind>('BXGY')
-  const [id, setId] = useState('')
   const [name, setName] = useState('')
   const [targetKind, setTargetKind] = useState<'category' | 'sku'>('category')
   const [category, setCategory] = useState(() => categories[0] ?? '')
@@ -83,6 +92,8 @@ export function AdminPage({
   const [minSubtotal, setMinSubtotal] = useState('')
 
   const [pending, setPending] = useState(false)
+  // Id of the most recent addition this visit — highlighted in the list.
+  const [lastCreatedId, setLastCreatedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -95,10 +106,9 @@ export function AdminPage({
    * @returns The request body, or a message describing the first problem.
    */
   const buildEntry = (): PromotionCreateRequest | string => {
-    const trimmedId = id.trim()
     const trimmedName = name.trim()
-    if (trimmedId === '' || trimmedName === '') {
-      return 'Id and name are required.'
+    if (trimmedName === '') {
+      return 'Name is required.'
     }
 
     let target: PromotionTarget
@@ -117,9 +127,9 @@ export function AdminPage({
       target = { kind: 'sku', sku }
     }
 
+    // No id: the server assigns the next free P<n> and returns it.
     const entry: PromotionCreateRequest = {
       type: kind,
-      id: trimmedId,
       name: trimmedName,
       target,
     }
@@ -169,10 +179,10 @@ export function AdminPage({
     createPromotion(built)
       .then((promotion) => {
         onCreated(promotion)
+        setLastCreatedId(promotion.id)
         setSuccess(
-          `Added "${promotion.name}" — it now appears in the shop and checkout.`,
+          `Added ${promotion.id} · "${promotion.name}" — it now appears in the shop and checkout.`,
         )
-        setId('')
         setName('')
         setMinQty('')
         setPercentOff('')
@@ -199,179 +209,225 @@ export function AdminPage({
       >
         &larr; Back to shop
       </a>
-      <h2 id="admin-heading">Add a promotion</h2>
-      <p className="muted admin-note">
-        Runtime-only: promotions added here reset when the server restarts. This
-        page is unauthenticated by scope.
-      </p>
-      <form className="admin-form" onSubmit={handleSubmit}>
-        <label className="admin-field">
-          <span>Type</span>
-          <select
-            value={kind}
-            onChange={(event) => setKind(event.target.value as PromotionKind)}
-          >
-            {KINDS.map((value) => (
-              <option key={value} value={value}>
-                {KIND_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="layout">
+        <div>
+          <h2 id="admin-heading">Add a promotion</h2>
+          <p className="muted admin-note">
+            Additions are saved and survive restarts. This page is
+            unauthenticated by scope.
+          </p>
+          <form className="admin-form" onSubmit={handleSubmit}>
+            <label className="admin-field">
+              <span>Type</span>
+              <select
+                value={kind}
+                onChange={(event) =>
+                  setKind(event.target.value as PromotionKind)
+                }
+              >
+                {KINDS.map((value) => (
+                  <option key={value} value={value}>
+                    {KIND_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <label className="admin-field">
-          <span>Id</span>
-          <input
-            value={id}
-            required
-            onChange={(event) => setId(event.target.value)}
-          />
-        </label>
+            <label className="admin-field">
+              <span>Name</span>
+              <input
+                value={name}
+                required
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
 
-        <label className="admin-field">
-          <span>Name</span>
-          <input
-            value={name}
-            required
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
+            {isItemKind && (
+              <fieldset className="admin-target">
+                <legend>Target</legend>
+                <div className="admin-radios">
+                  <label>
+                    <input
+                      type="radio"
+                      name="target-kind"
+                      checked={targetKind === 'category'}
+                      onChange={() => setTargetKind('category')}
+                    />
+                    <span>By category</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="target-kind"
+                      checked={targetKind === 'sku'}
+                      onChange={() => setTargetKind('sku')}
+                    />
+                    <span>By SKU</span>
+                  </label>
+                </div>
+                {targetKind === 'category' ? (
+                  <label className="admin-field">
+                    <span>Category</span>
+                    <select
+                      value={category}
+                      onChange={(event) => setCategory(event.target.value)}
+                    >
+                      {categories.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="admin-field">
+                    <span>Product</span>
+                    <select
+                      value={sku}
+                      onChange={(event) => setSku(event.target.value)}
+                    >
+                      {catalog.map((item) => (
+                        <option key={item.sku} value={item.sku}>
+                          {item.name} ({item.sku})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </fieldset>
+            )}
 
-        {isItemKind && (
-          <fieldset className="admin-target">
-            <legend>Target</legend>
-            <div className="admin-radios">
-              <label>
-                <input
-                  type="radio"
-                  name="target-kind"
-                  checked={targetKind === 'category'}
-                  onChange={() => setTargetKind('category')}
-                />
-                <span>By category</span>
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="target-kind"
-                  checked={targetKind === 'sku'}
-                  onChange={() => setTargetKind('sku')}
-                />
-                <span>By SKU</span>
-              </label>
-            </div>
-            {targetKind === 'category' ? (
+            {!isItemKind && (
+              <p className="muted">
+                {kind === 'PCT_OFF_CART'
+                  ? 'Applies to the whole cart — no target to pick.'
+                  : 'Applies to shipping — no target to pick.'}
+              </p>
+            )}
+
+            {(kind === 'BXGY' || kind === 'PCT_OFF_ITEM') && (
               <label className="admin-field">
-                <span>Category</span>
-                <select
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                >
-                  {categories.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label className="admin-field">
-                <span>Product</span>
-                <select
-                  value={sku}
-                  onChange={(event) => setSku(event.target.value)}
-                >
-                  {catalog.map((item) => (
-                    <option key={item.sku} value={item.sku}>
-                      {item.name} ({item.sku})
-                    </option>
-                  ))}
-                </select>
+                <span>Min quantity</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  required
+                  value={minQty}
+                  onChange={(event) => setMinQty(event.target.value)}
+                />
               </label>
             )}
-          </fieldset>
-        )}
 
-        {!isItemKind && (
-          <p className="muted">
-            {kind === 'PCT_OFF_CART'
-              ? 'Applies to the whole cart — no target to pick.'
-              : 'Applies to shipping — no target to pick.'}
-          </p>
-        )}
+            {(kind === 'PCT_OFF_ITEM' || kind === 'PCT_OFF_CART') && (
+              <label className="admin-field">
+                <span>Percent off</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  required
+                  value={percentOff}
+                  onChange={(event) => setPercentOff(event.target.value)}
+                />
+              </label>
+            )}
 
-        {(kind === 'BXGY' || kind === 'PCT_OFF_ITEM') && (
-          <label className="admin-field">
-            <span>Min quantity</span>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              required
-              value={minQty}
-              onChange={(event) => setMinQty(event.target.value)}
-            />
-          </label>
-        )}
+            {kind === 'FIXED_OFF_ITEM' && (
+              <label className="admin-field">
+                <span>Amount off ($)</span>
+                <input
+                  inputMode="decimal"
+                  placeholder="2.50"
+                  required
+                  value={amountOff}
+                  onChange={(event) => setAmountOff(event.target.value)}
+                />
+              </label>
+            )}
 
-        {(kind === 'PCT_OFF_ITEM' || kind === 'PCT_OFF_CART') && (
-          <label className="admin-field">
-            <span>Percent off</span>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              step={1}
-              required
-              value={percentOff}
-              onChange={(event) => setPercentOff(event.target.value)}
-            />
-          </label>
-        )}
+            {(kind === 'PCT_OFF_CART' || kind === 'FREE_SHIPPING') && (
+              <label className="admin-field">
+                <span>Min subtotal ($)</span>
+                <input
+                  inputMode="decimal"
+                  placeholder="50.00"
+                  required
+                  value={minSubtotal}
+                  onChange={(event) => setMinSubtotal(event.target.value)}
+                />
+              </label>
+            )}
 
-        {kind === 'FIXED_OFF_ITEM' && (
-          <label className="admin-field">
-            <span>Amount off ($)</span>
-            <input
-              inputMode="decimal"
-              placeholder="2.50"
-              required
-              value={amountOff}
-              onChange={(event) => setAmountOff(event.target.value)}
-            />
-          </label>
-        )}
+            <div>
+              <button
+                type="submit"
+                className="checkout-button"
+                disabled={pending}
+              >
+                {pending ? 'Adding…' : 'Add promotion'}
+              </button>
+            </div>
 
-        {(kind === 'PCT_OFF_CART' || kind === 'FREE_SHIPPING') && (
-          <label className="admin-field">
-            <span>Min subtotal ($)</span>
-            <input
-              inputMode="decimal"
-              placeholder="50.00"
-              required
-              value={minSubtotal}
-              onChange={(event) => setMinSubtotal(event.target.value)}
-            />
-          </label>
-        )}
-
-        <div>
-          <button type="submit" className="checkout-button" disabled={pending}>
-            {pending ? 'Adding…' : 'Add promotion'}
-          </button>
+            {error !== null && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            {success !== null && (
+              <p className="admin-success" role="status">
+                {success}
+              </p>
+            )}
+            <p className="muted admin-id-hint">
+              The ID is assigned automatically.
+            </p>
+          </form>
         </div>
-
-        {error !== null && (
-          <p className="error" role="alert">
-            {error}
+        <section aria-labelledby="promotions-list-heading">
+          <h2 id="promotions-list-heading">Current promotions</h2>
+          <p className="muted admin-note">
+            Live list — exactly what shoppers can claim at checkout.
           </p>
-        )}
-        {success !== null && (
-          <p className="admin-success" role="status">
-            {success}
-          </p>
-        )}
-      </form>
+          <ul className="promo-list">
+            {promotions.map((promotion) => {
+              const scope = scopeLabel(promotion.target, productNames)
+              const params = paramsLabel(promotion.params)
+              const added = promotion.source === 'runtime'
+              const classes = ['promo-row']
+              if (added) {
+                classes.push('promo-row--added')
+              }
+              if (promotion.id === lastCreatedId) {
+                classes.push('promo-row--new')
+              }
+              return (
+                <li key={promotion.id} className={classes.join(' ')}>
+                  <span className="promo-row-info">
+                    <span className="promo-row-name">{promotion.name}</span>
+                    <span className="promo-row-scope">
+                      {params === '' ? scope : `${scope} · ${params}`}
+                    </span>
+                  </span>
+                  <span className="promo-row-id">{promotion.id}</span>
+                  {promotion.source !== undefined && (
+                    <span
+                      className={
+                        added
+                          ? 'promo-badge promo-badge--added'
+                          : 'promo-badge promo-badge--seed'
+                      }
+                    >
+                      {added ? 'added' : 'seed'}
+                    </span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      </div>
     </section>
   )
 }

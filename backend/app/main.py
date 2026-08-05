@@ -1,4 +1,6 @@
 import os
+import re
+from enum import StrEnum
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -91,12 +93,20 @@ class PriceResponse(BaseModel):
     promotion_statuses: dict[str, PromotionStatus]
 
 
+class PromotionSource(StrEnum):
+    """Where a stored promotion came from — file seeds or the admin API."""
+
+    SEED = "seed"
+    RUNTIME = "runtime"
+
+
 class PromotionInfo(BaseModel):
     """One `GET /promotions` entry: identity plus display metadata.
 
     `params` carries the kind-specific condition/effect fields (`min_qty`,
     `percent_off`, ...) so the toggle list can describe each promotion
-    without hardcoding kinds.
+    without hardcoding kinds. `source` (additive) lets the admin page badge
+    seeds vs runtime additions.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -107,6 +117,7 @@ class PromotionInfo(BaseModel):
     phase: Phase
     target: PromotionTarget
     params: dict[str, int]
+    source: PromotionSource
 
 
 # Fields every kind shares (or that are engine-injected mechanics, like
@@ -119,15 +130,16 @@ _TYPE_BY_CLASS: dict[type[Promotion], str] = {
 }
 
 
-def _promotion_info(promotion: Promotion) -> PromotionInfo:
+def _promotion_info(promotion: Promotion, source: PromotionSource) -> PromotionInfo:
     """Project one stored promotion into its `GET /promotions` entry.
 
     Args:
         promotion: A stored (seed or runtime-added) promotion instance.
+        source: Whether the promotion is a file seed or a runtime addition.
 
     Returns:
-        The promotion's identity, type key, phase, target, and kind-specific
-        display parameters.
+        The promotion's identity, type key, phase, target, source, and
+        kind-specific display parameters.
     """
     params = {
         field: value
@@ -141,7 +153,30 @@ def _promotion_info(promotion: Promotion) -> PromotionInfo:
         phase=promotion.phase,
         target=promotion.target,
         params=params,
+        source=source,
     )
+
+
+def _next_promotion_id(existing_ids: set[str]) -> str:
+    """Next free auto-assigned promotion id: one past the highest P-number.
+
+    Ids that don't match `P<digits>` (custom ids callers chose themselves)
+    are ignored — they can never collide with the generated sequence's next
+    value unless they are themselves P-numbered.
+
+    Args:
+        existing_ids: Every stored promotion id, seeds and additions.
+
+    Returns:
+        The id `P<n+1>` where `n` is the highest existing P-number (0 when
+        there is none).
+    """
+    highest = 0
+    for existing in existing_ids:
+        match = re.fullmatch(r"P(\d+)", existing)
+        if match is not None:
+            highest = max(highest, int(match.group(1)))
+    return f"P{highest + 1}"
 
 
 @app.get("/health")
@@ -216,21 +251,32 @@ def promotions() -> list[PromotionInfo]:
         Seeds first, then runtime additions, in insertion (declaration)
         order — the same order the naive engine breaks cluster ties in.
     """
-    return [_promotion_info(promotion) for promotion in PROMOTION_STORE.all()]
+    addition_ids = PROMOTION_STORE.addition_ids()
+    return [
+        _promotion_info(
+            promotion,
+            PromotionSource.RUNTIME
+            if promotion.id in addition_ids
+            else PromotionSource.SEED,
+        )
+        for promotion in PROMOTION_STORE.all()
+    ]
 
 
 @app.post("/promotions", status_code=201)
 def add_promotion(entry: dict[str, object]) -> PromotionInfo:
     """Add one promotion at runtime (issue #68's unauthenticated admin API).
 
-    The body is exactly one seed-entry object — the same shape as an
-    `app/seeds/promotions.json` entry: a `type` registry key, `id`, `name`,
-    `target`, and the kind's own fields. It is validated through the seed
-    loader, so every seed rule applies (registered kind, correctly-scoped
-    target, kind field constraints). The addition is persisted to the
-    store's SQLite file (issue #75) and survives restarts; `POST /price`
-    picks it up immediately with no engine changes, since clusters and the
-    optimizer derive everything from the promotion list.
+    The body is one seed-entry object — the same shape as an
+    `app/seeds/promotions.json` entry: a `type` registry key, `name`,
+    `target`, the kind's own fields, and optionally an `id` (omitted or
+    null, the server assigns the next free `P<n>` and returns it). It is
+    validated through the seed loader, so every seed rule applies
+    (registered kind, correctly-scoped target, kind field constraints).
+    The addition is persisted to the store's SQLite file (issue #75) and
+    survives restarts; `POST /price` picks it up immediately with no
+    engine changes, since clusters and the optimizer derive everything
+    from the promotion list.
 
     Args:
         entry: One raw seed-entry mapping.
@@ -243,15 +289,25 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
         HTTPException: 422 if the entry fails seed validation or reuses an
             existing promotion id (seed or prior addition).
     """
+    stored_entry = dict(entry)
+    if stored_entry.get("id") is None:
+        # Auto-assign the next free P<n> (additive: explicit ids still
+        # accepted). The assigned id is written into the persisted entry so
+        # a restart replays exactly what was validated. A concurrent add
+        # racing to the same number loses in the store and 422s — at admin
+        # rates that is acceptable over holding a lock across validation.
+        stored_entry["id"] = _next_promotion_id(
+            {promotion.id for promotion in PROMOTION_STORE.all()}
+        )
     try:
-        promotion = parse_promotions([entry])[0]
+        promotion = parse_promotions([stored_entry])[0]
     except SeedLoadError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
-        PROMOTION_STORE.add(promotion, entry)
+        PROMOTION_STORE.add(promotion, stored_entry)
     except DuplicatePromotionIdError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _promotion_info(promotion)
+    return _promotion_info(promotion, PromotionSource.RUNTIME)
 
 
 @app.get("/catalog")
