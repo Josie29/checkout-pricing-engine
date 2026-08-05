@@ -794,10 +794,17 @@ button:disabled {
   margin-bottom: var(--space-4);
 }
 
+/* White card around the form, matching the promotion list's rows (and the
+   redesign mockup); inputs keep the cream page background inside it. */
 .admin-form {
   display: grid;
   gap: var(--space-3);
   max-width: 26rem;
+  padding: var(--space-4);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }
 
 .admin-field {
