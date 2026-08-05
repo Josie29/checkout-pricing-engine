@@ -308,22 +308,6 @@ export function AdminPage({
               </select>
             </label>
 
-            <label className="admin-field">
-              <span>Name</span>
-              <input
-                value={effectiveName}
-                onChange={(event) => {
-                  const next = event.target.value
-                  setName(next)
-                  // An emptied field hands naming back to the suggestion.
-                  setNameEdited(next !== '')
-                }}
-              />
-            </label>
-            <p className="admin-field-hint">
-              Composed from the fields below — edit to override.
-            </p>
-
             {isItemKind && (
               <fieldset className="admin-target">
                 <legend>Target</legend>
@@ -468,6 +452,22 @@ export function AdminPage({
                 />
               </label>
             )}
+
+            <label className="admin-field">
+              <span>Name</span>
+              <input
+                value={effectiveName}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setName(next)
+                  // An emptied field hands naming back to the suggestion.
+                  setNameEdited(next !== '')
+                }}
+              />
+            </label>
+            <p className="admin-field-hint">
+              Composed from the fields above — edit to override.
+            </p>
 
             <div>
               <button
