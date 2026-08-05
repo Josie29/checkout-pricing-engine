@@ -7,6 +7,7 @@ import type {
   PromotionInfo,
 } from '../types'
 import { PromotionToggles } from '../components/PromotionToggles'
+import { DealsExplainer } from '../components/DealsExplainer'
 import { PricePanel } from '../components/PricePanel'
 
 /** Debounce window for `POST /price` so rapid toggle clicks fire one request. */
@@ -184,6 +185,7 @@ export function CheckoutPage({
             onSetAllClaimed={onSetAllClaimed}
             pricePending={priceLoading}
           />
+          <DealsExplainer price={priced?.response ?? null} />
         </div>
         <div>
           <PricePanel
