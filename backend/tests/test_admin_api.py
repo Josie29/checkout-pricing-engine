@@ -77,6 +77,7 @@ class TestAddPromotion:
             "phase": "item",
             "target": {"kind": "sku", "sku": "MUG-TVL"},
             "params": {"amount_off_cents": 200},
+            "source": "runtime",
         }
         priced = _price(
             [
@@ -160,6 +161,43 @@ class TestAddPromotion:
         )
         assert response.status_code == 422
         assert "SKU or category target" in response.json()["detail"]
+
+
+class TestAutoAssignedIds:
+    """POST /promotions without an id — the server assigns the next P<n>."""
+
+    def test_omitted_id_gets_next_free_p_number(self) -> None:
+        """Catches auto-assignment colliding with or skipping past seeds.
+
+        With seeds P1-P7 stored, the first id-less addition must come back
+        as P8, badge as a runtime addition, and list after the seeds.
+        """
+        entry = {key: value for key, value in _MUG_FIXED_OFF.items() if key != "id"}
+        response = client.post("/promotions", json=entry)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["id"] == "P8"
+        assert body["source"] == "runtime"
+        listed = client.get("/promotions").json()
+        assert [promo["id"] for promo in listed] == [*SEED_IDS, "P8"]
+        assert [promo["source"] for promo in listed] == [*["seed"] * 6, "runtime"]
+
+    def test_assigned_ids_increment_past_prior_additions(self) -> None:
+        """Catches the generator reusing a number a prior addition took."""
+        entry = {key: value for key, value in _MUG_FIXED_OFF.items() if key != "id"}
+        first = client.post("/promotions", json=entry)
+        second = client.post("/promotions", json={**entry, "name": "Mug deal 2"})
+        assert [first.json()["id"], second.json()["id"]] == ["P8", "P9"]
+
+    def test_explicit_id_is_still_accepted(self) -> None:
+        """Catches the additive change breaking existing callers.
+
+        A body carrying its own id must store under that id, not a
+        generated one.
+        """
+        response = client.post("/promotions", json=_MUG_FIXED_OFF)
+        assert response.status_code == 201
+        assert response.json()["id"] == "A1"
 
 
 class TestAddedPromotionClusters:

@@ -185,6 +185,7 @@ function App() {
         ) : route === 'admin' ? (
           <AdminPage
             catalog={catalog}
+            promotions={promotions}
             onCreated={addPromotion}
             onBackToShop={() => navigate('shop')}
           />
