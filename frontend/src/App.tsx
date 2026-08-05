@@ -39,6 +39,10 @@ function App() {
         if (!cancelled) {
           setCatalog(catalogItems)
           setPromotions(promotionInfos)
+          // Every deal starts claimed, so checkout arrives as apply-all;
+          // which ones actually apply stays response-driven. Toggling after
+          // this is the user's choice — only a (re)seed resets it.
+          setClaimedIds(promotionInfos.map((promo) => promo.id))
         }
       })
       .catch((error: unknown) => {

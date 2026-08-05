@@ -146,16 +146,10 @@ test('shop builds the cart and checkout renders the priced response', async () =
   // clicking it opens the cart drawer, which holds the checkout button.
   fireEvent.click(screen.getByRole('button', { name: 'Cart, 3 items' }))
 
-  // Go to checkout from the drawer: the debounced POST /price fires on
-  // arrival and the canned base total renders.
+  // Go to checkout from the drawer: deals default to all-claimed, so the
+  // arrival POST /price already carries P1 and the discounted total (with
+  // its explanation) renders straight away.
   fireEvent.click(screen.getByRole('button', { name: 'Go to checkout' }))
-  expect(await screen.findByText('$55.00')).toBeDefined()
-
-  // Toggle P1: the repriced total and its explanation come straight from
-  // the canned response.
-  fireEvent.click(
-    screen.getByRole('checkbox', { name: 'Beans: buy 2 get 1 free' }),
-  )
   expect(await screen.findByText('$39.00')).toBeDefined()
   expect(
     screen.getByText('Beans: buy 2 get 1 free (item promotion) — saved $16.00'),
@@ -164,14 +158,20 @@ test('shop builds the cart and checkout renders the priced response', async () =
     screen.getByText('$16.00 off Ethiopia Yirgacheffe, 12oz'),
   ).toBeDefined()
 
-  // Clear all, then apply all: each bulk click is a single claimed-ids
-  // update, so each fires exactly one more POST /price — clear-all with no
-  // ids, apply-all with every id. Catches the bug where a bulk action loops
-  // over toggles and sprays one request per promotion.
-  fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+  // Unclaiming P1 reprices to the base total.
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: 'Beans: buy 2 get 1 free' }),
+  )
   expect(await screen.findByText('$55.00')).toBeDefined()
+
+  // Apply all, then clear all: each bulk click is a single claimed-ids
+  // update, so each fires exactly one more POST /price — apply-all with
+  // every id, clear-all with none. Catches the bug where a bulk action
+  // loops over toggles and sprays one request per promotion.
   fireEvent.click(screen.getByRole('button', { name: 'Apply all' }))
   expect(await screen.findByText('$39.00')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+  expect(await screen.findByText('$55.00')).toBeDefined()
 
   const priceBodies = fetchMock.mock.calls
     .filter(([input]) => String(input).endsWith('/price'))
@@ -180,6 +180,7 @@ test('shop builds the cart and checkout renders the priced response', async () =
         (JSON.parse(String(init?.body)) as { claimed_promotion_ids: string[] })
           .claimed_promotion_ids,
     )
-  // Arrival, toggle, clear-all, apply-all — four requests, no extras.
-  expect(priceBodies).toEqual([[], ['P1'], [], ['P1']])
+  // Arrival (default all-claimed), toggle-off, apply-all, clear-all —
+  // four requests, no extras.
+  expect(priceBodies).toEqual([['P1'], [], ['P1'], []])
 })
