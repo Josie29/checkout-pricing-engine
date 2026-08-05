@@ -858,6 +858,19 @@ button:disabled {
   font-size: 0.75rem;
 }
 
+.admin-field-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+/* Side-by-side numeric pair (BXGY's buy N / get Y). */
+.admin-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
 /* Admin: live promotion list beside the form. Rows share the checkout
    coupons' card vocabulary; runtime additions get the caramel edge. */
 .promo-list {

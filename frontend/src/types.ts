@@ -104,6 +104,7 @@ export interface PromotionCreateRequest {
   name: string
   target: PromotionTarget
   min_qty?: number
+  free_qty?: number
   percent_off?: number
   amount_off_cents?: number
   min_subtotal_cents?: number
