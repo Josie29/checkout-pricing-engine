@@ -160,10 +160,15 @@ test('shop builds the cart and checkout renders the priced response', async () =
     screen.getByText('$16.00 off Ethiopia Yirgacheffe, 12oz'),
   ).toBeDefined()
 
-  // "See how" expands the walkthrough, narrating the cascade with the
-  // response's phase subtotals — catches the explainer rendering the wrong
-  // base for cart deals (the raw subtotal instead of the discounted one).
-  fireEvent.click(screen.getByRole('button', { name: 'See how' }))
+  // The "How deals work" row under the coupons expands the walkthrough,
+  // narrating the cascade with the response's phase subtotals — catches the
+  // explainer rendering the wrong base for cart deals (the raw subtotal
+  // instead of the discounted one).
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'How deals work — 3 rounds, best combination wins',
+    }),
+  )
   expect(
     screen.getByText(
       'Cart deals ran next, on the discounted items total of $32.00.',
