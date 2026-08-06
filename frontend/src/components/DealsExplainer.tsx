@@ -111,9 +111,10 @@ export function DealsExplainer({ price }: DealsExplainerProps) {
           </div>
           <p className="how-rules">
             Deals that overlap on the same items never stack — at most one wins
-            per group, plus one cart deal and one shipping deal. Every allowed
-            combination of your switched-on deals was priced (even skipping
-            some), and the cheapest total won.
+            per item, plus one cart deal and one shipping deal. Deals on
+            different items apply together. Every allowed combination of your
+            switched-on deals was priced (even skipping some), and the cheapest
+            total won.
           </p>
         </div>
       )}

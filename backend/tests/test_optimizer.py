@@ -13,6 +13,7 @@ from app.promotions import (
     targets_can_overlap,
 )
 from app.seeds import load_seed_catalog, load_seed_promotions
+from tests.legality import assert_no_overlapping_pair
 
 CATALOG = {item.sku: item for item in load_seed_catalog()}
 SEED_PROMOTIONS = load_seed_promotions()
@@ -130,7 +131,7 @@ class TestOptimizerProperties:
 
         Catches any cart shape where the search returns a worse total than
         the engine it exists to beat, applies an unclaimed promotion,
-        stacks two members of one conflict cluster, or produces a receipt
+        stacks two promotions onto the same line, or produces a receipt
         whose lines, trace, and totals disagree by a cent — and any drift
         between the winner and the shared `price_combination` core.
         """
@@ -152,11 +153,8 @@ class TestOptimizerProperties:
             sum(adj.amount_cents for adj in result.adjustments)
             == result.discount_total_cents
         )
-        claimed_promos = [promo for promo in SEED_PROMOTIONS if promo.id in claimed]
-        for cluster in derive_clusters(cart, claimed_promos).all_clusters():
-            in_cluster = sum(1 for promo in cluster.promotions if promo.id in applied)
-            assert in_cluster <= 1
         applied_promos = [promo for promo in SEED_PROMOTIONS if promo.id in applied]
+        assert_no_overlapping_pair(applied_promos, cart)
         assert price_combination(cart, applied_promos) == result.model_copy(
             update={"optimal": False}
         )
@@ -235,6 +233,116 @@ class TestClusterPartitionProperty:
                 for cluster in clusters.for_phase(phase)
             }
             assert derived == components
+
+
+class TestPerLineExclusivity:
+    """The optimizer searches within a cluster, not just across clusters."""
+
+    def test_two_sku_deals_beat_the_category_deal_that_chains_them(self) -> None:
+        """A1+A2 (200c) wins over the bean deal (100c) they share a cluster with.
+
+        The optimizer half of the shopper-visible regression, and a real
+        oracle: naive takes the first-declared B1 for 100c, so this result
+        only exists if the search enumerates *combinations* within a
+        cluster instead of one-member-or-none. Catches a return to
+        per-cluster exclusivity, which caps the shopper's saving at 100c.
+        """
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        promos = [
+            fixed_off("B1", CategoryTarget(category="Coffee Beans")),
+            fixed_off("A1", SkuTarget(sku="COF-ETH")),
+            fixed_off("A2", SkuTarget(sku="COF-COL")),
+        ]
+        claimed = {"B1", "A1", "A2"}
+        naive = price_naive(cart, promos, claimed)
+        outcome = optimize(cart, promos, claimed)
+        # 1600 + 1400 = 3000 subtotal, 1000 flat shipping.
+        assert naive.result.total_cents == 3900  # B1 alone: -100
+        assert outcome.result.total_cents == 3800  # A1 + A2: -200
+        assert applied_ids(outcome.statuses) == {"A1", "A2"}
+        assert outcome.statuses["B1"] is PromotionStatus.CLAIMED
+
+    def test_star_cluster_past_the_cap_falls_back(self) -> None:
+        """One category deal over ten SKU deals (2**10 + 1 outcomes) bails out.
+
+        The blow-up the independent-set enumeration introduced: these all
+        land in ONE cluster, which the old k+1 rule sized at 12. Catches
+        the cap being measured before enumeration (or not at all), which
+        would hang the request instead of degrading to `optimal: false`.
+        """
+        cart = Cart(
+            items=[
+                LineItem(
+                    sku=f"SYN-{i}", category="Synthetic", unit_price_cents=1000, qty=1
+                )
+                for i in range(10)
+            ]
+        )
+        promos = [fixed_off("HUB", CategoryTarget(category="Synthetic"))] + [
+            fixed_off(f"X{i}", SkuTarget(sku=f"SYN-{i}")) for i in range(10)
+        ]
+        claimed = {promo.id for promo in promos}
+        outcome = optimize(cart, promos, claimed)
+        assert outcome == price_naive(cart, promos, claimed)
+        assert outcome.result.optimal is False
+
+    def test_huge_star_cluster_is_instant_not_exponential(self) -> None:
+        """A cluster of 2**30 outcomes returns without enumerating them.
+
+        The cap has to bound enumeration *as it runs*: counting a cluster's
+        independent sets means walking them, so measuring first and
+        capping after would hang here for hours. Catches `legal_outcomes`
+        being called without its limit — the suite stops instead of
+        finishing in milliseconds.
+        """
+        cart = Cart(
+            items=[
+                LineItem(
+                    sku=f"SYN-{i}", category="Synthetic", unit_price_cents=1000, qty=1
+                )
+                for i in range(30)
+            ]
+        )
+        promos = [fixed_off("HUB", CategoryTarget(category="Synthetic"))] + [
+            fixed_off(f"X{i}", SkuTarget(sku=f"SYN-{i}")) for i in range(30)
+        ]
+        claimed = {promo.id for promo in promos}
+        outcome = optimize(cart, promos, claimed)
+        assert outcome == price_naive(cart, promos, claimed)
+        assert outcome.result.optimal is False
+
+    def test_trace_lists_a_phase_s_promotions_in_declaration_order(self) -> None:
+        """Picks from two clusters are traced in declaration order, not cluster order.
+
+        Clusters are ordered by their first member, so taking a late member
+        of an early cluster (Z) alongside an early member of a later
+        cluster (Y) emits them reversed unless the combination is sorted.
+        Catches the receipt's "How your deals applied" list jumping around
+        for no reason a shopper can see — and the frozen golden traces
+        drifting with unrelated promotion additions.
+        """
+        cart = Cart(
+            items=[
+                LineItem(
+                    sku="SKU-A", category="Synthetic", unit_price_cents=5000, qty=1
+                ),
+                LineItem(
+                    sku="SKU-B", category="Synthetic", unit_price_cents=5000, qty=1
+                ),
+            ]
+        )
+        # X and Z share SKU-A (one cluster, first member X); Y is its own.
+        promos = [
+            fixed_off("X", SkuTarget(sku="SKU-A")),
+            fixed_off("Y", SkuTarget(sku="SKU-B")),
+            FixedOffItem(
+                id="Z", name="Z", target=SkuTarget(sku="SKU-A"), amount_off_cents=300
+            ),
+        ]
+        outcome = optimize(cart, promos, {"X", "Y", "Z"})
+        # Z (300) beats X (100) on SKU-A, and Y applies on SKU-B.
+        assert applied_ids(outcome.statuses) == {"Y", "Z"}
+        assert [adj.promotion_id for adj in outcome.result.adjustments] == ["Y", "Z"]
 
 
 def synthetic_catalog(count: int) -> tuple[Cart, list[Promotion]]:

@@ -2,7 +2,7 @@
 
 Per docs/scope.md's "Stacking/combination engine" line. Contrasted against in docs/optimizer-spec.md, defined here.
 
-Per cluster (docs/seed-promotions.md's phase cardinality), apply the first eligible promo found (declaration order) — no priority field, no ranking. Then cascade Item → Cart → Shipping. No backtracking to withhold an eligible promo for a better downstream result. Cheap, O(1)-ish per cluster, no search.
+Walk each phase's claimed promos in declaration order and apply every one that is eligible and doesn't target a resource an earlier pick already took (docs/seed-promotions.md's phase cardinality: at most one Item-phase promo *per line item*) — no priority field, no ranking. Promos on different lines therefore stack; only a genuine overlap costs the later promo its slot. Then cascade Item → Cart → Shipping. No backtracking to withhold an eligible promo for a better downstream result. Cheap, no search.
 
 Runs on every request alongside the optimizer (docs/optimizer-spec.md), not as a separate cheaper/faster path — the two are close enough in cost that there's no live-update benefit to keeping them apart. Naive's role now: the optimizer's test-oracle baseline, and its live runtime fallback (docs/optimizer-spec.md's cluster-product cap and sanity-check triggers).
 

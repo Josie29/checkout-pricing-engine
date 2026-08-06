@@ -3,7 +3,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.clusters import derive_clusters
 from app.domain import (
     Adjustment,
     Cart,
@@ -13,7 +12,7 @@ from app.domain import (
     PricedLine,
     PricingResult,
 )
-from app.promotions import Promotion
+from app.promotions import Promotion, targets_can_overlap
 
 
 class EngineConfig(BaseModel):
@@ -31,12 +30,14 @@ class EngineConfig(BaseModel):
     cluster_product_cap: int = Field(default=512, ge=1)
     """Max cluster-outcome combinations the optimizer (#25) will enumerate.
 
-    The search space is the product of (cluster size + 1) across all
-    clusters (docs/optimizer-spec.md); past this cap the optimizer skips
-    the search and returns the naive result with `optimal: false`. 512 is
-    ~14x today's seed-set space of 36 (nine independent binary clusters'
-    worth), while bounding worst-case work to 512 cascade evaluations —
-    comfortably sub-second.
+    The search space is the product of every cluster's legal-outcome count
+    across all clusters (docs/optimizer-spec.md) — a cluster's outcomes are
+    its independent sets, so a cluster of *k* mutually exclusive promotions
+    still contributes *k+1*, but one category promotion over *n* per-SKU
+    promotions contributes 2**n + 1. Past this cap the optimizer skips the
+    search and returns the naive result with `optimal: false`. 512 is ~14x
+    today's seed-set space of 36, while bounding worst-case work to 512
+    cascade evaluations — comfortably sub-second.
     """
 
 
@@ -52,10 +53,10 @@ class EngineInvariantError(ValueError):
     """An engine-level pricing invariant was violated.
 
     Raised — never clamped — for violations the domain model cannot see on
-    its own: a promotion applied twice, two same-cluster promotions in one
-    combination, a line discounted below zero, or shipping discounted below
-    zero. Any of these means a bug in the caller or a promotion kind, not a
-    condition to price through.
+    its own: a promotion applied twice, two promotions in one combination
+    whose targets overlap, a line discounted below zero, or shipping
+    discounted below zero. Any of these means a bug in the caller or a
+    promotion kind, not a condition to price through.
     """
 
 
@@ -90,19 +91,22 @@ def price_combination(
     """Price one explicit promotion combination through the phase cascade.
 
     The reusable cascade core (issue #21 for issue #25): the caller has
-    already resolved conflicts down to at most one promotion per conflict
-    cluster; this function prices exactly that choice. Each promotion is
-    applied iff it is eligible against its phase's cascade state — an
-    ineligible member is skipped without error, so an optimizer enumerating
-    cluster outcomes can price combinations whose Cart/Shipping members turn
-    out ineligible once upstream discounts land (they simply contribute
-    nothing). Within a phase, promotions apply in the order given; pass
-    declaration order for a canonical trace.
+    already resolved conflicts down to a legal combination — no two members
+    of a phase whose targets overlap on this cart — and this function prices
+    exactly that choice. Two Item-phase promotions targeting different lines
+    are legal and both apply (docs/seed-promotions.md: at most one Item-phase
+    promo *per line item*). Each promotion is applied iff it is eligible
+    against its phase's cascade state — an ineligible member is skipped
+    without error, so an optimizer enumerating cluster outcomes can price
+    combinations whose Cart/Shipping members turn out ineligible once
+    upstream discounts land (they simply contribute nothing). Within a phase,
+    promotions apply in the order given; pass declaration order for a
+    canonical trace.
 
     Args:
         cart: The cart to price.
-        combination: The chosen promotions, at most one per conflict
-            cluster on `cart`.
+        combination: The chosen promotions; within a phase, no two of them
+            may target the same line of `cart`.
         config: Engine configuration; defaults to `EngineConfig()`.
 
     Returns:
@@ -110,23 +114,25 @@ def price_combination(
         False; the optimizer labels its own winner).
 
     Raises:
-        EngineInvariantError: If two combination members share a conflict
-            cluster on `cart` (including the same promotion twice), or a
-            downstream pricing invariant is violated.
+        EngineInvariantError: If two combination members of one phase have
+            targets that overlap on `cart` (including the same promotion
+            twice), or a downstream pricing invariant is violated.
         ValueError: If a constructed result fails the domain model's
             invariant validators.
     """
     engine_config = config if config is not None else EngineConfig()
-    for cluster in derive_clusters(cart, combination).all_clusters():
-        if len(cluster.promotions) > 1:
-            ids = ", ".join(promo.id for promo in cluster.promotions)
-            raise EngineInvariantError(
-                f"combination is illegal: promotions [{ids}] share a"
-                f" {cluster.phase} conflict cluster on this cart"
-            )
     by_phase: dict[Phase, list[Promotion]] = {phase: [] for phase in Phase}
     for promotion in combination:
         by_phase[promotion.phase].append(promotion)
+    for phase, members in by_phase.items():
+        for index, first in enumerate(members):
+            for second in members[index + 1 :]:
+                if targets_can_overlap(first.target, second.target, cart):
+                    raise EngineInvariantError(
+                        f"combination is illegal: promotions [{first.id},"
+                        f" {second.id}] target the same {phase} resource of"
+                        " this cart"
+                    )
 
     def select(phase: Phase, state: Cart) -> list[Promotion]:
         """The phase's chosen promotions that are eligible against `state`."""
@@ -143,11 +149,14 @@ def price_naive(
 ) -> EngineOutcome:
     """Price a cart with the naive engine (docs/core-engine-spec.md).
 
-    Considers only claimed promotions. Per conflict cluster, applies the
-    first member (declaration order — the order of `promotions`, i.e. seed
-    file order) that is eligible against the phase's cascade state; no
-    ranking, no backtracking to withhold a promotion for a better downstream
-    total. Phases cascade Item -> Cart -> Shipping, each phase's eligibility
+    Considers only claimed promotions. Walks each phase's claimed
+    promotions in declaration order (the order of `promotions`, i.e. seed
+    file order) and greedily applies every one that is eligible against the
+    phase's cascade state and does not target a line already taken by an
+    earlier pick — so promotions on different lines stack, and only a
+    genuine overlap costs the later promotion its slot. No ranking, no
+    backtracking to withhold a promotion for a better downstream total.
+    Phases cascade Item -> Cart -> Shipping, each phase's eligibility
     checked against the previous phase's output state. A claimed promotion
     that is never eligible stays claimed — never applied, no error.
 
@@ -166,8 +175,8 @@ def price_naive(
             an unknown id, or a constructed result fails the domain model's
             invariant validators.
         EngineInvariantError: If a pricing invariant is violated — with
-            first-eligible-per-cluster selection this indicates a bug, not
-            a bad request.
+            greedy non-overlapping selection this indicates a bug, not a
+            bad request.
     """
     engine_config = config if config is not None else EngineConfig()
     ids = [promotion.id for promotion in promotions]
@@ -177,17 +186,23 @@ def price_naive(
     if unknown:
         raise ValueError(f"claimed ids not in the promotion list: {unknown}")
     claimed_set = set(claimed_ids)
-    claimed = [promotion for promotion in promotions if promotion.id in claimed_set]
-    clusters = derive_clusters(cart, claimed)
+    claimed_by_phase: dict[Phase, list[Promotion]] = {phase: [] for phase in Phase}
+    for promotion in promotions:
+        if promotion.id in claimed_set:
+            claimed_by_phase[promotion.phase].append(promotion)
 
     def select(phase: Phase, state: Cart) -> list[Promotion]:
-        """First eligible member of each of the phase's clusters, if any."""
+        """Every eligible member of the phase that no earlier pick overlaps."""
         chosen: list[Promotion] = []
-        for cluster in clusters.for_phase(phase):
-            for member in cluster.promotions:
-                if member.is_eligible(state):
-                    chosen.append(member)
-                    break
+        for member in claimed_by_phase[phase]:
+            # Overlap is decided on the original cart, matching cluster
+            # derivation: targets match on SKU/category, which no phase
+            # changes, so the cascade state would give the same answer.
+            if member.is_eligible(state) and not any(
+                targets_can_overlap(member.target, taken.target, cart)
+                for taken in chosen
+            ):
+                chosen.append(member)
         return chosen
 
     result = _run_cascade(cart, select, engine_config)
