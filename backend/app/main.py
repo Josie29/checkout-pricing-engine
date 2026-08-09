@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.catalog import CatalogItem
 from app.domain import Adjustment, Cart, Phase, PhaseSubtotals, PricedLine
+from app.eligibility import PromotionAvailability, describe_availability
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
 from app.optimizer import optimize
 from app.promotion_store import (
@@ -97,6 +98,14 @@ class PriceResponse(BaseModel):
     optimal: bool
     phase_subtotals: PhaseSubtotals | None
     promotion_statuses: dict[str, PromotionStatus]
+    promotion_availability: dict[str, PromotionAvailability]
+    """Per-promotion eligibility, shortfall, and conflicts (additive).
+
+    `promotion_statuses` reports *what happened*; this reports *why*.
+    Together they give the checkout its three visual states: applied,
+    qualifies-but-beaten (`eligible`, not applied), and does-not-qualify
+    (`eligible: false`, with `gap` to explain the distance).
+    """
 
 
 class PromotionSource(StrEnum):
@@ -275,6 +284,7 @@ def price(request: PriceRequest) -> PriceResponse:
         optimal=result.optimal,
         phase_subtotals=result.phase_subtotals,
         promotion_statuses=outcome.statuses,
+        promotion_availability=describe_availability(request.cart, promotions, result),
     )
 
 

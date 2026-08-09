@@ -60,6 +60,23 @@ class EngineInvariantError(ValueError):
     """
 
 
+class CascadeRun(BaseModel):
+    """A priced result plus the phase states its eligibility was judged against.
+
+    `phase_inputs[phase]` is the cart the cascade handed that phase's
+    `is_eligible` — the original cart at Item, and each earlier phase's
+    output thereafter (docs/seed-promotions.md's phase table). Pricing does
+    not need these, but explaining does: "why didn't free shipping apply?"
+    is only answerable against the subtotal that promotion actually tested,
+    which is not the cart the shopper submitted (`app/eligibility.py`).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    result: PricingResult
+    phase_inputs: dict[Phase, Cart]
+
+
 class EngineOutcome(BaseModel):
     """The naive engine's full answer: the priced result plus statuses.
 
@@ -88,6 +105,36 @@ def price_combination(
     combination: Sequence[Promotion],
     config: EngineConfig | None = None,
 ) -> PricingResult:
+    """Price one explicit promotion combination, discarding phase states.
+
+    The pricing-only view of `price_combination_run` — see it for the full
+    contract. Callers that need to explain *why* an unapplied promotion did
+    not fire want the run instead.
+
+    Args:
+        cart: The cart to price.
+        combination: The chosen promotions; within a phase, no two of them
+            may target the same line of `cart`.
+        config: Engine configuration; defaults to `EngineConfig()`.
+
+    Returns:
+        The priced result for exactly this combination.
+
+    Raises:
+        EngineInvariantError: If two combination members of one phase have
+            targets that overlap on `cart` (including the same promotion
+            twice), or a downstream pricing invariant is violated.
+        ValueError: If a constructed result fails the domain model's
+            invariant validators.
+    """
+    return price_combination_run(cart, combination, config).result
+
+
+def price_combination_run(
+    cart: Cart,
+    combination: Sequence[Promotion],
+    config: EngineConfig | None = None,
+) -> CascadeRun:
     """Price one explicit promotion combination through the phase cascade.
 
     The reusable cascade core (issue #21 for issue #25): the caller has
@@ -111,7 +158,8 @@ def price_combination(
 
     Returns:
         The priced result for exactly this combination (`optimal` left
-        False; the optimizer labels its own winner).
+        False; the optimizer labels its own winner), plus the per-phase
+        cascade states it was priced against.
 
     Raises:
         EngineInvariantError: If two combination members of one phase have
@@ -205,7 +253,7 @@ def price_naive(
                 chosen.append(member)
         return chosen
 
-    result = _run_cascade(cart, select, engine_config)
+    result = _run_cascade(cart, select, engine_config).result
     applied_ids = {adjustment.promotion_id for adjustment in result.adjustments}
     statuses = {
         promotion.id: (
@@ -220,9 +268,7 @@ def price_naive(
     return EngineOutcome(result=result, statuses=statuses)
 
 
-def _run_cascade(
-    cart: Cart, select: PhaseSelector, config: EngineConfig
-) -> PricingResult:
+def _run_cascade(cart: Cart, select: PhaseSelector, config: EngineConfig) -> CascadeRun:
     """The one pricing path: cascade phases, apply selections, assemble.
 
     Runs Item -> Cart -> Shipping. At each phase, `select` is handed the
@@ -243,8 +289,9 @@ def _run_cascade(
         config: Engine configuration.
 
     Returns:
-        The assembled result; the domain model's validators re-check every
-        itemization invariant on construction.
+        The assembled result plus the state each phase's `select` was
+        handed; the domain model's validators re-check every itemization
+        invariant on construction.
 
     Raises:
         EngineInvariantError: If a promotion is applied twice, an
@@ -265,7 +312,12 @@ def _run_cascade(
     # checker they are always bound).
     after_item_cents = cart.subtotal_cents
     after_cart_cents = cart.subtotal_cents
+    phase_inputs: dict[Phase, Cart] = {}
     for phase in Phase:
+        # Captured before the phase applies anything: this is the state its
+        # promotions' `is_eligible` sees, and so the state an unapplied
+        # promotion's shortfall must be measured against.
+        phase_inputs[phase] = state
         for promotion in select(phase, state):
             if promotion.id in applied_ids:
                 raise EngineInvariantError(
@@ -323,17 +375,20 @@ def _run_cascade(
         for item in cart.items
     ]
     shipping_cents = config.shipping_baseline_cents - shipping_discount
-    return PricingResult(
-        lines=lines,
-        adjustments=adjustments,
-        subtotal_cents=cart.subtotal_cents,
-        discount_total_cents=sum(adj.amount_cents for adj in adjustments),
-        shipping_cents=shipping_cents,
-        total_cents=sum(line.line_total_cents for line in lines) + shipping_cents,
-        phase_subtotals=PhaseSubtotals(
-            after_item_cents=after_item_cents,
-            after_cart_cents=after_cart_cents,
+    return CascadeRun(
+        result=PricingResult(
+            lines=lines,
+            adjustments=adjustments,
+            subtotal_cents=cart.subtotal_cents,
+            discount_total_cents=sum(adj.amount_cents for adj in adjustments),
+            shipping_cents=shipping_cents,
+            total_cents=sum(line.line_total_cents for line in lines) + shipping_cents,
+            phase_subtotals=PhaseSubtotals(
+                after_item_cents=after_item_cents,
+                after_cart_cents=after_cart_cents,
+            ),
         ),
+        phase_inputs=phase_inputs,
     )
 
 

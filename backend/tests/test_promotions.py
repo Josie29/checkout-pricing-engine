@@ -282,6 +282,42 @@ class TestGenericPromotionContract:
         assert cart.model_dump() == before
 
     @pytest.mark.parametrize("type_key", sorted(PROMOTION_REGISTRY))
+    def test_gap_is_silent_when_the_cart_already_qualifies(self, type_key: str) -> None:
+        """A qualifying cart has no shortfall to report.
+
+        Catches a kind computing its gap from the wrong side of the
+        comparison: the checkout would tell a shopper to "add $12 to
+        qualify" for a deal that is already applying to their cart.
+        """
+        promotion = parse_fixture_promotion(type_key)
+        assert promotion.gap(CONTRACT_FIXTURES[type_key].eligible_cart) is None
+
+    @pytest.mark.parametrize("type_key", sorted(PROMOTION_REGISTRY))
+    def test_gap_is_pure_and_agrees_with_ineligibility(self, type_key: str) -> None:
+        """`gap` never mutates, repeats itself, and only reports real gaps.
+
+        A gap is optional (kinds without a threshold return None), but a
+        reported one must be strictly positive — a zero or negative
+        "shortfall" would render as "add $0.00 to qualify" next to a deal
+        the shopper cannot have. Catches a kind whose gap disagrees with its
+        own `is_eligible`.
+        """
+        promotion = parse_fixture_promotion(type_key)
+        cart = CONTRACT_FIXTURES[type_key].ineligible_cart
+        before = cart.model_dump()
+        gap = promotion.gap(cart)
+        assert gap == promotion.gap(cart)
+        assert cart.model_dump() == before
+        if gap is not None:
+            reported = [
+                value
+                for value in (gap.subtotal_short_cents, gap.qty_short)
+                if value is not None
+            ]
+            assert reported, "a gap must report at least one shortfall"
+            assert all(value > 0 for value in reported)
+
+    @pytest.mark.parametrize("type_key", sorted(PROMOTION_REGISTRY))
     def test_apply_is_deterministic_and_does_not_mutate(self, type_key: str) -> None:
         """`apply` on an eligible cart is repeatable and leaves it unchanged.
 
