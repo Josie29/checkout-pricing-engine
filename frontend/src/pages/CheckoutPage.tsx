@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, postPrice } from '../api'
 import type {
   CartItemInput,
   CatalogItem,
+  DealToggleContext,
   PriceResponse,
   PromotionInfo,
 } from '../types'
@@ -46,33 +47,18 @@ interface CheckoutPageProps {
   /** Seeded catalog — sku -> name lookup for readable coupon scope lines. */
   catalog: CatalogItem[]
   cartItems: CartItemInput[]
-  claimedIds: string[]
+  /**
+   * The shopper's explicit deal set, or null for automatic (every deal
+   * claimed, server picks the best combination).
+   */
+  selection: string[] | null
   /** Deals the shopper forced on, overriding the optimizer's pick. */
   pinnedIds: string[]
-  onToggle: (id: string, on: boolean) => void
+  onToggle: (id: string, on: boolean, context: DealToggleContext) => void
   /** Drop every override, back to the automatic best combination. */
   onReset: () => void
   /** Navigate back to the shop page. */
   onBackToShop: () => void
-}
-
-/**
- * Whether the shopper has overridden the automatic best combination.
- *
- * The default is every deal claimed and nothing pinned; anything else is an
- * override, and is what puts the reset control on screen.
- *
- * @param promotions - Every deal the shop offers.
- * @param claimedIds - Deals still in play (the default is all of them).
- * @param pinnedIds - Deals forced on.
- * @returns True when a deal has been excluded or forced.
- */
-function overridesActive(
-  promotions: PromotionInfo[],
-  claimedIds: string[],
-  pinnedIds: string[],
-): boolean {
-  return pinnedIds.length > 0 || claimedIds.length !== promotions.length
 }
 
 /** "Back to shop" as a real link so it reads as navigation; the click is
@@ -103,12 +89,20 @@ export function CheckoutPage({
   promotions,
   catalog,
   cartItems,
-  claimedIds,
+  selection,
   pinnedIds,
   onToggle,
   onReset,
   onBackToShop,
 }: CheckoutPageProps) {
+  // Automatic mode claims everything; an explicit selection claims exactly
+  // itself, which is what keeps a deal the shopper never switched on out of
+  // the search — and so out of the receipt — when they switch another off.
+  const claimedIds = useMemo(
+    () => selection ?? promotions.map((promo) => promo.id),
+    [selection, promotions],
+  )
+  const overridden = selection !== null
   const [priced, setPriced] = useState<PricedResult | null>(null)
   const [failure, setFailure] = useState<PriceFailure | null>(null)
   // State, not a ref: the reset control's savings figure is rendered from
@@ -133,7 +127,7 @@ export function CheckoutPage({
     }
     const seq = ++priceRequestSeq.current
     const controller = new AbortController()
-    const overriding = overridesActive(promotions, claimedIds, pinnedIds)
+    const overriding = selection !== null
     const timer = setTimeout(() => {
       postPrice(
         {
@@ -173,7 +167,7 @@ export function CheckoutPage({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [cartItems, claimedIds, pinnedIds, priceAttempt, promotions])
+  }, [cartItems, claimedIds, pinnedIds, priceAttempt, selection])
 
   const retryPrice = () => {
     // Clearing the failure returns the panel to its pending state while the
@@ -207,7 +201,6 @@ export function CheckoutPage({
     failure.pinnedIds === pinnedIds
   const priceLoading = !priceCurrent && !failureCurrent
 
-  const overridden = overridesActive(promotions, claimedIds, pinnedIds)
   // What the override costs, but only when the automatic best is known for
   // *this* cart — editing the cart while overridden leaves us without a
   // baseline, and quoting a saving from the previous cart would be a lie.
@@ -219,6 +212,12 @@ export function CheckoutPage({
     priced.response.total_cents > bestKnown.totalCents
       ? priced.response.total_cents - bestKnown.totalCents
       : null
+
+  // What the latest response actually applied, in trace order — the set the
+  // first manual switch inherits as its explicit selection.
+  const appliedIds =
+    priced?.response.adjustments.map((adjustment) => adjustment.promotion_id) ??
+    []
 
   // Cents saved per applied promotion, read off the response's adjustments
   // (like statuses, may briefly lag the toggles while a reprice is in
@@ -246,6 +245,7 @@ export function CheckoutPage({
             savedCents={savedCents}
             overridden={overridden}
             overrideCostCents={overrideCostCents}
+            appliedIds={appliedIds}
             onToggle={onToggle}
             onReset={onReset}
             pricePending={priceLoading}

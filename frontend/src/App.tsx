@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { fetchCatalog, fetchPromotions } from './api'
-import type { CartItemInput, CatalogItem, PromotionInfo } from './types'
+import type {
+  CartItemInput,
+  CatalogItem,
+  DealToggleContext,
+  PromotionInfo,
+} from './types'
 import { useRoute } from './router'
 import { ShopPage } from './pages/ShopPage'
 import { CheckoutPage } from './pages/CheckoutPage'
@@ -22,11 +27,17 @@ function App() {
   const [seedError, setSeedError] = useState<string | null>(null)
 
   const [cartItems, setCartItems] = useState<CartItemInput[]>([])
-  // Deal state is two overrides on top of "everything is claimed": ids the
-  // shopper excluded are absent from `claimedIds`, and ids they forced on
-  // are in `pinnedIds`. With neither, the server picks the best allowed
-  // combination on its own — the default the checkout resets back to.
-  const [claimedIds, setClaimedIds] = useState<string[]>([])
+  // Deal state has two modes. `selection === null` is automatic: every deal
+  // is claimed and the server picks the best allowed combination. The first
+  // manual switch freezes whatever was applied into an explicit selection,
+  // and every edit after that is a plain add/remove on that set. Freezing
+  // is what stops a deal the shopper never turned on from promoting itself
+  // into the receipt when they switch something else off — switching off is
+  // purely subtractive.
+  const [selection, setSelection] = useState<string[] | null>(null)
+  // Deals the shopper explicitly switched ON. Subset of the selection, sent
+  // as pins so the server forces them even when it would rather withhold
+  // them for a better total elsewhere.
   const [pinnedIds, setPinnedIds] = useState<string[]>([])
   // The header cart pill toggles this slide-over; adding items never opens
   // it — the pill's live count is the feedback.
@@ -44,11 +55,10 @@ function App() {
         if (!cancelled) {
           setCatalog(catalogItems)
           setPromotions(promotionInfos)
-          // Every deal starts claimed: there is no opting in, the server
-          // picks the best allowed combination, and which ones actually
-          // apply stays response-driven. Overrides after this are the
-          // shopper's — only a (re)seed resets them.
-          setClaimedIds(promotionInfos.map((promo) => promo.id))
+          // No claimed-set to seed: `selection === null` already means
+          // "every deal claimed". There is no opting in — the server picks
+          // the best allowed combination and which ones actually apply
+          // stays response-driven.
         }
       })
       .catch((error: unknown) => {
@@ -111,29 +121,49 @@ function App() {
     setCartItems((items) => items.filter((line) => line.sku !== sku))
   }
 
-  const toggleDeal = (id: string, on: boolean) => {
+  const toggleDeal = (id: string, on: boolean, context: DealToggleContext) => {
+    // Declaration order keeps the request body stable across edits, so two
+    // routes to the same selection produce the same array.
+    const order = promotions ?? []
+    const inOrder = (ids: Iterable<string>) => {
+      const wanted = new Set(ids)
+      return order
+        .map((promo) => promo.id)
+        .filter((promoId) => wanted.has(promoId))
+    }
+    // The first manual switch inherits whatever the server had applied;
+    // after that the shopper's own set is the starting point.
+    const base = new Set(selection ?? context.appliedIds)
     if (on) {
-      // Pin it: the server constrains its search to combinations where this
-      // deal actually applies and drops whatever it displaces, so the
-      // mutually-exclusive rival switches itself off in the next response.
-      // A pin implies a claim, but re-claiming keeps the two sets coherent
-      // if the shopper had excluded this deal earlier.
-      setPinnedIds((ids) => (ids.includes(id) ? ids : [...ids, id]))
-      setClaimedIds((ids) => (ids.includes(id) ? ids : [...ids, id]))
+      // Drop the deals that cannot co-apply with this one before adding it,
+      // so we never ask the server for a combination it has to resolve for
+      // us. Dropping them from the *selection* (not just un-pinning) is what
+      // keeps a later switch-off subtractive: un-pinning alone would leave
+      // the rival lurking, ready to reappear.
+      for (const conflicting of context.conflictsWith) {
+        base.delete(conflicting)
+      }
+      base.add(id)
+      setSelection(inOrder(base))
+      setPinnedIds((ids) =>
+        inOrder([
+          ...ids.filter(
+            (existing) => !context.conflictsWith.includes(existing),
+          ),
+          id,
+        ]),
+      )
       return
     }
-    // Switching a deal off means "not this one" — drop both the pin and the
-    // claim, or the server would just re-apply it.
+    base.delete(id)
+    setSelection(inOrder(base))
     setPinnedIds((ids) => ids.filter((existing) => existing !== id))
-    setClaimedIds((ids) => ids.filter((existing) => existing !== id))
   }
 
   const resetDeals = () => {
-    // Back to the automatic best: claim everything, pin nothing. Two updates,
-    // but React batches them, so the debounced reprice still fires once.
-    setClaimedIds(
-      promotions === null ? [] : promotions.map((promo) => promo.id),
-    )
+    // Back to automatic: no explicit selection, no pins. Two updates, but
+    // React batches them, so the debounced reprice still fires once.
+    setSelection(null)
     setPinnedIds([])
   }
 
@@ -145,7 +175,9 @@ function App() {
         ? existing
         : existing.filter((promotion) => promotion.id !== id),
     )
-    setClaimedIds((ids) => ids.filter((existing) => existing !== id))
+    setSelection((ids) =>
+      ids === null ? null : ids.filter((existing) => existing !== id),
+    )
     setPinnedIds((ids) => ids.filter((existing) => existing !== id))
   }
 
@@ -153,12 +185,12 @@ function App() {
     // Append the 201 body — GET /promotions lists seeds then additions, so
     // this matches what a refetch would return. Shop signage and checkout
     // toggles read this state, so the new promotion appears immediately.
+    // In automatic mode it competes for a slot straight away; under an
+    // explicit selection it stays out until the shopper switches it on,
+    // since adding it for them is exactly the surprise this mode removes.
     setPromotions((existing) =>
       existing === null ? [promotion] : [...existing, promotion],
     )
-    // Claimed like every other deal, so it competes for a slot immediately
-    // rather than sitting inert until the shopper finds and enables it.
-    setClaimedIds((ids) => [...ids, promotion.id])
   }
 
   const retrySeed = () => {
@@ -236,7 +268,7 @@ function App() {
             promotions={promotions}
             catalog={catalog}
             cartItems={cartItems}
-            claimedIds={claimedIds}
+            selection={selection}
             pinnedIds={pinnedIds}
             onToggle={toggleDeal}
             onReset={resetDeals}

@@ -115,6 +115,20 @@ export interface PriceResponse {
   promotion_availability?: Record<string, PromotionAvailability>
 }
 
+/**
+ * What the checkout knows at the moment a deal switch is clicked, handed to
+ * the app-level handler that owns the selection.
+ *
+ * Both facts come from the latest price response, so the handler never has
+ * to re-derive server logic: `appliedIds` is what the first manual switch
+ * inherits as its starting selection, and `conflictsWith` is the exact
+ * pairwise exclusivity the engine enforces on this cart.
+ */
+export interface DealToggleContext {
+  appliedIds: string[]
+  conflictsWith: string[]
+}
+
 /** What a promotion acts on (discriminated on `kind`). */
 export type PromotionTarget =
   | { kind: 'sku'; sku: string }

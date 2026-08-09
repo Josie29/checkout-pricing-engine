@@ -1,4 +1,5 @@
 import type {
+  DealToggleContext,
   PromotionAvailability,
   PromotionInfo,
   PromotionStatus,
@@ -28,8 +29,10 @@ interface PromotionTogglesProps {
    * appears, just without a figure).
    */
   overrideCostCents: number | null
+  /** Deals the latest response applied, in trace order. */
+  appliedIds: string[]
   /** Force a deal on (`on`) or exclude it (`!on`). */
-  onToggle: (id: string, on: boolean) => void
+  onToggle: (id: string, on: boolean, context: DealToggleContext) => void
   /** Drop every override and return to the automatic best combination. */
   onReset: () => void
   /** True while a `POST /price` is pending; controls are disabled. */
@@ -62,6 +65,7 @@ export function PromotionToggles({
   savedCents,
   overridden,
   overrideCostCents,
+  appliedIds,
   onToggle,
   onReset,
   pricePending,
@@ -115,7 +119,10 @@ export function PromotionToggles({
                   // accessible name.
                   aria-label={promotion.name}
                   onChange={(event) =>
-                    onToggle(promotion.id, event.target.checked)
+                    onToggle(promotion.id, event.target.checked, {
+                      appliedIds,
+                      conflictsWith: entry?.conflicts_with ?? [],
+                    })
                   }
                 />
                 {/* Purely visual switch; state lives on the checkbox. */}

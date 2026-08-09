@@ -27,7 +27,18 @@ Only the third state dims, so "greyed out" means exactly one thing: your cart do
 
 The switch reflects what **applied**, not what was claimed, so it can never disagree with the receipt beside it. Mutual exclusion therefore needs no client-side rule: pinning a deal makes the server drop whatever it displaces, and the rival's switch turns itself off in the next response.
 
-Overrides are two sets on top of the default: ids excluded (absent from `claimed_promotion_ids`) and ids forced (`pinned_promotion_ids`). While either is non-empty a reset control appears, labelled with what the override costs against the automatic best — known only when that best was priced for the *current* cart, otherwise the control shows without a figure rather than quoting a stale saving.
+### Automatic vs. explicit selection
+
+Two modes, because re-optimizing over the whole catalog after every click makes switches move on their own, which reads as the UI fighting the shopper:
+
+- **Automatic** (`selection === null`, the default): every deal is claimed and the server picks the best allowed combination.
+- **Explicit**: the first manual switch freezes whatever was applied into a selection, and every later edit is a plain add/remove on that set. `claimed_promotion_ids` is then exactly the selection.
+
+The point of freezing is that **switching a deal off is purely subtractive**. Claiming only the selection means a rival the shopper never turned on cannot be substituted in — it simply becomes `available` (un-greyed, switch off) and waits to be chosen. Switching a deal *on* additionally pins it and drops its conflicts from the selection, so the rival cannot lurk and reappear on a later switch-off.
+
+Deals still change *state* freely as the cart or the applied set moves — a threshold deal un-greys the moment the cart clears its bar, and shortfalls recompute against the new cascade. What never changes without a click is which switches are **on**.
+
+A reset control appears whenever a selection is in force, labelled with what the override costs against the automatic best. That figure is known only when the automatic best was priced for the *current* cart; after a cart edit the control shows without a figure rather than quoting a stale saving.
 
 ## Update flow
 
