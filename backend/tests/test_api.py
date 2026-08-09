@@ -225,6 +225,7 @@ class TestPriceOptimizer:
             promotions: Sequence[Promotion],
             claimed_ids: Collection[str],
             config: EngineConfig | None = None,
+            pinned_ids: Collection[str] = (),
         ) -> EngineOutcome:
             """Price with no promotions at all, mislabeled as optimal."""
             outcome = price_naive(cart, promotions, [])
@@ -258,6 +259,7 @@ class TestPriceOptimizer:
             promotions: Sequence[Promotion],
             claimed_ids: Collection[str],
             config: EngineConfig | None = None,
+            pinned_ids: Collection[str] = (),
         ) -> EngineOutcome:
             """Return an internally-consistent result totaling zero cents."""
             zero_line = PricedLine(
@@ -367,3 +369,77 @@ def test_cors_origins_env_var_enables_cors(monkeypatch: pytest.MonkeyPatch) -> N
             "/health", headers={"Origin": "https://web.example"}
         )
     assert "access-control-allow-origin" not in response.headers
+
+
+class TestPricePinning:
+    """`pinned_promotion_ids` — the shopper overriding the optimizer."""
+
+    def _price_pinned(self, claimed: list[str], pinned: list[str]) -> httpx.Response:
+        """POST /price against the withholding cart with pins."""
+        return client.post(
+            "/price",
+            json={
+                "cart": {"items": _CONFLICT_CART},
+                "claimed_promotion_ids": claimed,
+                "pinned_promotion_ids": pinned,
+            },
+        )
+
+    def test_pinned_deal_is_applied_even_though_it_costs_the_shopper(self) -> None:
+        """Pinning P4 serves 5500, not the 5250 the free search prefers.
+
+        The end-to-end contract behind the checkout's toggle. Catches the
+        API's never-worse-than-naive guard throwing away a pinned result:
+        the shopper would click a deal, watch the price not move, and have
+        no way to take it.
+        """
+        response = self._price_pinned(["P4", "P2"], ["P4"])
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total_cents"] == 5500
+        assert body["promotion_statuses"]["P4"] == "applied"
+        assert body["promotion_statuses"]["P2"] == "claimed"
+
+    def test_omitting_pins_prices_exactly_as_before(self) -> None:
+        """An unpinned request is byte-identical to one without the field.
+
+        The additive-field promise: existing clients that never learned
+        about pinning must not see their prices move.
+        """
+        with_field = self._price_pinned(["P4", "P2"], [])
+        without_field = _price(_CONFLICT_CART, ["P4", "P2"])
+        assert with_field.status_code == 200
+        assert with_field.text == without_field.text
+        assert with_field.json()["total_cents"] == 5250
+
+    def test_a_pin_implies_a_claim(self) -> None:
+        """Pinning a deal the request never claimed still applies it.
+
+        Lets the checkout send one field for "force this on" rather than
+        keeping two sets in sync. Catches the pin being dropped for not
+        being claimed — the click would silently do nothing.
+        """
+        body = self._price_pinned([], ["P4"]).json()
+        assert body["promotion_statuses"]["P4"] == "applied"
+        assert body["total_cents"] == 5500
+
+    def test_unknown_pinned_id_is_rejected_as_a_bad_request(self) -> None:
+        """A pin naming no promotion 422s rather than being ignored."""
+        response = self._price_pinned(["P4"], ["NOPE"])
+        assert response.status_code == 422
+        assert "NOPE" in response.json()["detail"]
+
+    def test_availability_explains_what_the_pin_cost(self) -> None:
+        """Pinning P4 pushes P2 under its threshold, and the UI is told why.
+
+        Availability is recomputed against the *pinned* cascade, so the
+        shopper sees the consequence of their own override: taking $5 off
+        drops the post-item subtotal to 4500, leaving P2 exactly 500 short
+        of its 5000 bar. Catches availability being computed against the
+        unpinned optimum, which would show P2 as merely beaten and give no
+        hint that the pin is what displaced it.
+        """
+        body = self._price_pinned(["P4", "P2"], ["P4"]).json()
+        p2 = body["promotion_availability"]["P2"]
+        assert p2["eligible"] is False
+        assert p2["gap"] == {"subtotal_short_cents": 500, "qty_short": None}

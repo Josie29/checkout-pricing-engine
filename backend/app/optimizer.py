@@ -18,6 +18,7 @@ def optimize(
     promotions: Sequence[Promotion],
     claimed_ids: Collection[str],
     config: EngineConfig | None = None,
+    pinned_ids: Collection[str] = (),
 ) -> EngineOutcome:
     """Find the best-allowed promotion combination (docs/optimizer-spec.md).
 
@@ -40,11 +41,27 @@ def optimize(
     result, so the winner is deterministic and independent of claimed-id
     input order.
 
-    Fallback: if the cluster-outcome product exceeds
+    Pinning (`pinned_ids`) constrains the search to combinations in which
+    every pinned promotion *actually applies* — not merely appears, since a
+    member can turn out ineligible mid-cascade and contribute nothing. It
+    is the shopper overriding the optimizer at checkout ("I want that deal
+    instead"), and it is strictly a restriction: the winner is the best
+    combination among those honoring the pins, so a pinned result is never
+    better than the unpinned optimum and usually worse. A pin implies a
+    claim. Pinning is also the only way to force a promotion the search
+    would otherwise withhold for a better downstream total (the P4/P2
+    threshold interaction) — those two do not conflict, so no amount of
+    un-claiming rivals would surface P4.
+
+    Fallbacks, both returning the naive engine's outcome unchanged
+    (`optimal: False`): the cluster-outcome product exceeding
     `config.cluster_product_cap` — including when a single cluster's
-    independent sets do so on their own — the search is skipped entirely
-    and the naive engine's outcome is returned unchanged (`optimal:
-    False`).
+    independent sets do so on their own — and, when pins are given, no
+    combination managing to apply all of them (an unsatisfiable pin, e.g.
+    two pinned promotions that conflict, or one that is ineligible on this
+    cart). The naive fallback has no notion of pins and does not honor
+    them; a caller that needs to distinguish "pins honored" from "fell
+    back" should compare the pinned ids against the result's adjustments.
 
     Args:
         cart: The cart to price.
@@ -53,17 +70,20 @@ def optimize(
             a subset of the ids in `promotions`; only claimed promotions
             are searched over.
         config: Engine configuration; defaults to `EngineConfig()`.
+        pinned_ids: Ids the shopper forced on. Must be a subset of the ids
+            in `promotions`; treated as claimed whether or not they also
+            appear in `claimed_ids`. Empty leaves the search unconstrained.
 
     Returns:
         The best combination's priced result (`optimal` True) plus one
         status per promotion — a claimed promotion the search chose to
         withhold stays `claimed`, exactly like claimed-but-ineligible. On
-        cap fallback, the naive outcome (`optimal` False).
+        either fallback, the naive outcome (`optimal` False).
 
     Raises:
-        ValueError: If `promotions` repeat an id, `claimed_ids` references
-            an unknown id, or a constructed result fails the domain
-            model's invariant validators.
+        ValueError: If `promotions` repeat an id, `claimed_ids` or
+            `pinned_ids` references an unknown id, or a constructed result
+            fails the domain model's invariant validators.
         EngineInvariantError: If a pricing invariant is violated while
             pricing a combination — a bug, not a bad request.
     """
@@ -74,7 +94,13 @@ def optimize(
     unknown = sorted(set(claimed_ids) - set(ids))
     if unknown:
         raise ValueError(f"claimed ids not in the promotion list: {unknown}")
-    claimed_set = set(claimed_ids)
+    unknown_pins = sorted(set(pinned_ids) - set(ids))
+    if unknown_pins:
+        raise ValueError(f"pinned ids not in the promotion list: {unknown_pins}")
+    pinned_set = set(pinned_ids)
+    # A pin implies a claim: forcing a deal on is strictly stronger than
+    # toggling it on, so a caller never has to send both.
+    claimed_set = set(claimed_ids) | pinned_set
     claimed = [promotion for promotion in promotions if promotion.id in claimed_set]
 
     cap = engine_config.cluster_product_cap
@@ -86,11 +112,11 @@ def optimize(
     for cluster in clusters:
         outcomes = cluster.legal_outcomes(cart, limit=cap)
         if outcomes is None:
-            return price_naive(cart, promotions, claimed_ids, engine_config)
+            return price_naive(cart, promotions, claimed_set, engine_config)
         options.append(outcomes)
         search_space *= len(outcomes)
         if search_space > cap:
-            return price_naive(cart, promotions, claimed_ids, engine_config)
+            return price_naive(cart, promotions, claimed_set, engine_config)
 
     # Clusters arrive Item -> Cart -> Shipping, but a phase's clusters are
     # ordered by first member, so flattening alone can emit a phase's picks
@@ -106,12 +132,25 @@ def optimize(
             (promotion for outcome in choice for promotion in outcome),
             key=lambda promotion: declaration_order[promotion.id],
         )
+        # Cheap pre-filter: a combination that does not even contain every
+        # pin cannot apply them all, so skip pricing it.
+        if not pinned_set.issubset({promotion.id for promotion in combination}):
+            continue
         result = price_combination(cart, combination, engine_config)
         applied = sorted(adj.promotion_id for adj in result.adjustments)
+        # Containing a pin is not enough — a member can be dropped
+        # mid-cascade once upstream discounts move its threshold. The
+        # shopper asked for the deal to apply, not to be considered.
+        if not pinned_set.issubset(applied):
+            continue
         key = (result.total_cents, len(applied), tuple(applied))
         if best_key is None or key < best_key:
             best, best_key = result, key
-    assert best is not None  # options is never empty per-axis: product yields >= 1
+    if best is None:
+        # Unsatisfiable pins (conflicting, or ineligible on this cart).
+        # Nothing legal honors the shopper's override, so fall back rather
+        # than silently pricing something they did not ask for.
+        return price_naive(cart, promotions, claimed_set, engine_config)
 
     applied_ids = {adjustment.promotion_id for adjustment in best.adjustments}
     statuses = {

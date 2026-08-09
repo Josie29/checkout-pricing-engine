@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -414,3 +415,118 @@ class TestClusterProductCap:
         assert outcome.result.optimal is True
         assert outcome.result.total_cents == naive.result.total_cents == 10000
         assert applied_ids(outcome.statuses) == claimed
+
+
+class TestPinning:
+    """Shopper overrides: forcing a deal the search would not have picked."""
+
+    # The withholding cart from TestOracles: BREW-V60 (2800) + MUG-TVL
+    # (2200) = 5000, where the optimizer drops P4 to keep P2's 15%.
+    withholding_cart = Cart(items=[line("BREW-V60"), line("MUG-TVL")])
+
+    def test_pinning_forces_a_promotion_the_search_withheld(self) -> None:
+        """Pinning P4 takes the $5 off and forfeits P2, exactly as asked.
+
+        The case that motivates pins at all: P4 and P2 sit in different
+        phases and do not conflict, so no amount of un-claiming rivals
+        would surface P4 — without pinning, a shopper clicking it in the
+        checkout would see nothing happen. Catches pinning being silently
+        ignored, which is that dead click.
+
+        Hand arithmetic — pinning P4 leaves only the {P4} branch legal:
+          5000 - 500 = 4500; post-item 4500 < P2's 5000 bar, so P2 is
+          forfeited; 4500 + 1000 shipping = 5500 (vs the 5250 optimum).
+        """
+        outcome = optimize(
+            self.withholding_cart, SEED_PROMOTIONS, {"P4", "P2"}, pinned_ids={"P4"}
+        )
+        assert applied_ids(outcome.statuses) == {"P4"}
+        assert outcome.result.total_cents == 5500
+
+    def test_pinning_costs_the_shopper_relative_to_the_free_optimum(self) -> None:
+        """The pinned total is worse than the unpinned one, and that is correct.
+
+        Pins are a restriction, so this asserts the direction of the
+        trade-off the checkout has to disclose. Catches a pin accidentally
+        *widening* the search — which would mean the unpinned optimum was
+        not optimal.
+        """
+        free = optimize(self.withholding_cart, SEED_PROMOTIONS, {"P4", "P2"})
+        pinned = optimize(
+            self.withholding_cart, SEED_PROMOTIONS, {"P4", "P2"}, pinned_ids={"P4"}
+        )
+        assert free.result.total_cents == 5250
+        assert pinned.result.total_cents > free.result.total_cents
+
+    def test_pinning_a_rival_swaps_the_cluster_winner(self) -> None:
+        """Pinning P1 unseats P6 on a cart where P6 otherwise wins.
+
+        The mutual-exclusion half of the story: six bags make P6 (20% off,
+        1920) beat P1 (one free bag, 1600), so pinning P1 must swap them
+        rather than apply both. Catches a pin being satisfied by a
+        combination that also keeps the rival — an illegal double-discount
+        on one line.
+        """
+        cart = Cart(items=[line("COF-ETH", qty=6)])
+        outcome = optimize(cart, SEED_PROMOTIONS, {"P1", "P6"}, pinned_ids={"P1"})
+        assert applied_ids(outcome.statuses) == {"P1"}
+        assert outcome.result.total_cents == 9000
+
+    def test_a_pin_implies_a_claim(self) -> None:
+        """Pinning a promotion the caller never claimed still applies it.
+
+        Forcing a deal on is strictly stronger than toggling it on, so the
+        API never has to send both. Catches a pin being filtered out before
+        the search because it was missing from the claimed set — the pin
+        would then silently do nothing.
+        """
+        cart = Cart(items=[line("COF-ETH", qty=6)])
+        outcome = optimize(cart, SEED_PROMOTIONS, set(), pinned_ids={"P1"})
+        assert applied_ids(outcome.statuses) == {"P1"}
+
+    def test_unsatisfiable_pins_fall_back_instead_of_guessing(self) -> None:
+        """Pinning two mutually exclusive deals returns the naive outcome.
+
+        No legal combination applies both P1 and P6 on a beans cart. The
+        honest answer is the documented fallback, not silently honoring
+        whichever pin happens to survive. Catches a partial pin being
+        served as though the request were satisfied.
+        """
+        cart = Cart(items=[line("COF-ETH", qty=6)])
+        outcome = optimize(cart, SEED_PROMOTIONS, {"P1", "P6"}, pinned_ids={"P1", "P6"})
+        assert outcome == price_naive(cart, SEED_PROMOTIONS, {"P1", "P6"})
+        assert outcome.result.optimal is False
+
+    def test_pinning_an_ineligible_promotion_falls_back(self) -> None:
+        """A pin the cart cannot satisfy degrades to the naive outcome.
+
+        P1 needs three bean units; this cart has none. Catches the search
+        returning an empty-combination "success" that reports the pin as
+        honored when nothing was applied.
+        """
+        cart = Cart(items=[line("MUG-CLS")])
+        outcome = optimize(cart, SEED_PROMOTIONS, {"P1"}, pinned_ids={"P1"})
+        assert outcome.result.optimal is False
+        assert applied_ids(outcome.statuses) == set()
+
+    def test_unknown_pinned_id_is_rejected(self) -> None:
+        """A pin naming no promotion is a caller error, not a silent no-op."""
+        cart = Cart(items=[line("COF-ETH", qty=3)])
+        with pytest.raises(ValueError, match="pinned ids not in the promotion list"):
+            optimize(cart, SEED_PROMOTIONS, SEED_IDS, pinned_ids={"NOPE"})
+
+    @given(claimed=st.sets(st.sampled_from(SEED_IDS)))
+    def test_pinning_the_winners_reproduces_the_unpinned_result(
+        self, claimed: set[str]
+    ) -> None:
+        """Pinning exactly what the free search chose changes nothing.
+
+        The consistency law tying pinned and unpinned search together: the
+        optimum is a fixed point of its own pins. Catches pinning perturbing
+        the tie-break or the trace order, which would make the checkout's
+        totals flicker as a shopper pins the deals already applying.
+        """
+        cart = Cart(items=[line("COF-ETH", qty=4), line("BREW-V60")])
+        free = optimize(cart, SEED_PROMOTIONS, claimed)
+        winners = applied_ids(free.statuses)
+        assert optimize(cart, SEED_PROMOTIONS, claimed, pinned_ids=winners) == free
