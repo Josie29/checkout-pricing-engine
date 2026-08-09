@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { CatalogItem, PromotionInfo } from '../types'
+import type { CartItemInput, CatalogItem, PromotionInfo } from '../types'
 import { CatalogList } from '../components/CatalogList'
 import { DealsBanner } from '../components/DealsBanner'
 
@@ -7,7 +7,10 @@ interface ShopPageProps {
   catalog: CatalogItem[]
   /** Seeded promotion list — rendered as read-only signage only. */
   promotions: PromotionInfo[]
+  /** Current cart, so each card can show the quantity already added. */
+  cartItems: CartItemInput[]
   onAdd: (item: CatalogItem) => void
+  onQtyStep: (sku: string, delta: 1 | -1) => void
 }
 
 /**
@@ -19,7 +22,13 @@ interface ShopPageProps {
  * page. Cart/shipping deal signage is behind a toggle button instead of a
  * permanent banner; per-product deals still chip their catalog cards.
  */
-export function ShopPage({ catalog, promotions, onAdd }: ShopPageProps) {
+export function ShopPage({
+  catalog,
+  promotions,
+  cartItems,
+  onAdd,
+  onQtyStep,
+}: ShopPageProps) {
   const [dealsOpen, setDealsOpen] = useState(false)
   // Item-phase promos are chipped on cards by CatalogList; only cart- and
   // shipping-phase promos live behind the toggle (mirrors DealsBanner's
@@ -42,7 +51,13 @@ export function ShopPage({ catalog, promotions, onAdd }: ShopPageProps) {
         )}
       </div>
       {dealsOpen && <DealsBanner promotions={promotions} />}
-      <CatalogList catalog={catalog} promotions={promotions} onAdd={onAdd} />
+      <CatalogList
+        catalog={catalog}
+        promotions={promotions}
+        qtyBySku={new Map(cartItems.map((line) => [line.sku, line.qty]))}
+        onAdd={onAdd}
+        onQtyStep={onQtyStep}
+      />
     </div>
   )
 }

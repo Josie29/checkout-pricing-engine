@@ -365,6 +365,40 @@ button:disabled {
   color: var(--color-accent-contrast);
 }
 
+/* Replaces the Add button once the item is in the cart, so the card itself
+   answers "how many do I have?". Sized to match the Add button's footprint
+   so cards don't reflow when one is added. */
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: 0.125rem;
+}
+
+.qty-stepper button {
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font-size: var(--font-size-base);
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  min-width: 1.75rem;
+}
+
+.qty-stepper button:hover:not(:disabled) {
+  background-color: var(--color-surface);
+}
+
+.qty-stepper-count {
+  min-width: 1.5rem;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Cart */
 .cart-table {
   width: 100%;
@@ -420,8 +454,13 @@ button:disabled {
   color: var(--color-danger);
 }
 
-/* Promotions — coupon cards with switches. Applied coupons get a caramel
-   edge and show their saving; claimed-but-inert ones dim. */
+/* Promotions — coupon cards with switches, in three states that must be
+   distinguishable at a glance:
+     --applied     caramel edge, switch on, shows the saving
+     --available   plain card, switch off, clickable to take instead
+     --ineligible  dimmed and inert, with the shortfall that unlocks it
+   Only --ineligible dims, so "greyed out" means exactly one thing: your
+   cart does not qualify. */
 .promo-head {
   display: flex;
   align-items: center;
@@ -434,9 +473,19 @@ button:disabled {
   margin: 0;
 }
 
-.promotion-bulk-actions {
-  display: flex;
-  gap: var(--space-2);
+/* Reset control: only present while the shopper is overriding the automatic
+   best, so it reads as an undo rather than a permanent action. */
+.reset-deals {
+  border-color: var(--color-callout-border);
+  background-color: var(--color-callout-bg);
+  color: var(--color-callout-text);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.promo-intro {
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-3);
 }
 
 .promotion-list {
@@ -463,8 +512,16 @@ button:disabled {
   border-left-color: var(--color-badge-bg);
 }
 
-.coupon--inert {
-  opacity: 0.7;
+/* Qualifies but a rival won this slot: full-strength, and the pointer
+   cursor advertises that clicking it will take it instead. */
+.coupon--available {
+  border-left-color: var(--color-border);
+}
+
+.coupon--ineligible {
+  opacity: 0.55;
+  background-color: var(--color-surface);
+  box-shadow: none;
 }
 
 .coupon-label {
@@ -474,6 +531,11 @@ button:disabled {
   flex: 1;
   min-width: 0;
   cursor: pointer;
+}
+
+/* Nothing to click on a deal the cart cannot use. */
+.coupon--ineligible .coupon-label {
+  cursor: default;
 }
 
 /* The checkbox stays for semantics/focus; the switch is its visual. */
@@ -558,6 +620,14 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* The actionable half of an ineligible card: what would unlock it. Wraps
+   (unlike .coupon-status) because it is a sentence, not a badge. */
+.coupon-hint {
+  color: var(--color-callout-text);
+  font-size: 0.75rem;
+  margin-top: var(--space-1);
+}
+
 /* Price panel — a white receipt card: thumbnailed lines with green savings
    chips and struck-through pre-discount subtotals, then the sums. */
 .receipt {
@@ -578,6 +648,90 @@ button:disabled {
   color: var(--color-callout-text);
 }
 
+/* Deals explainer — a dashed footnote row at the end of the coupon list;
+   expands in place into the three-round walkthrough. */
+.deals-explainer {
+  margin-top: var(--space-2);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-card);
+}
+
+.deals-explainer-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.deals-explainer-i {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--color-text-muted);
+  border-radius: 50%;
+  font-size: 0.6875rem;
+}
+
+.deals-explainer-chevron {
+  margin-left: auto;
+}
+
+/* The expanded walkthrough: three numbered rounds plus the rules line. */
+.how-steps {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px dashed var(--color-border);
+  font-size: var(--font-size-sm);
+}
+
+.how-step {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.how-step p {
+  margin: 0;
+}
+
+.how-step ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
+.how-step-num {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background-color: var(--color-header-bg);
+  color: var(--color-header-text);
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.how-quiet {
+  color: var(--color-text-muted);
+}
+
+.how-rules {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 .receipt-lines {
   list-style: none;
   margin: 0;
@@ -596,6 +750,11 @@ button:disabled {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+}
+
+.receipt-line-top {
+  display: flex;
   align-items: baseline;
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -604,6 +763,11 @@ button:disabled {
 .receipt-line-name {
   font-size: var(--font-size-sm);
   font-weight: 600;
+}
+
+.receipt-line-cat {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .receipt-line-save {
@@ -700,10 +864,17 @@ button:disabled {
   margin-bottom: var(--space-4);
 }
 
+/* White card around the form, matching the promotion list's rows (and the
+   redesign mockup); inputs keep the cream page background inside it. */
 .admin-form {
   display: grid;
   gap: var(--space-3);
   max-width: 26rem;
+  padding: var(--space-4);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }
 
 .admin-field {
@@ -751,6 +922,95 @@ button:disabled {
 .admin-success {
   margin: 0;
   color: var(--color-success);
+}
+
+.admin-id-hint {
+  font-size: 0.75rem;
+}
+
+.admin-field-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+/* Side-by-side numeric pair (BXGY's buy N / get Y). */
+.admin-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+/* Admin: live promotion list beside the form. Rows share the checkout
+   coupons' card vocabulary; runtime additions get the caramel edge. */
+.promo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.promo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.promo-row--added {
+  border-left-color: var(--color-badge-bg);
+}
+
+.promo-row--new {
+  background-color: var(--color-success-bg);
+}
+
+.promo-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.promo-row-name {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.promo-row-scope {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.promo-row-id {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.promo-badge {
+  font-size: 0.6875rem;
+  border-radius: 999px;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+.promo-badge--seed {
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.promo-badge--added {
+  color: var(--color-callout-text);
+  background-color: var(--color-callout-bg);
+  border: 1px solid var(--color-callout-border);
 }
 
 .visually-hidden {

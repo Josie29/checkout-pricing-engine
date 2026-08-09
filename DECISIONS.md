@@ -6,12 +6,17 @@ summary the brief asks for.
 
 ## Architecture
 
-**Pricing is a pure function; there is no database.** A cart plus a set of claimed
-promotions fully determines the result, so the service is stateless: seed promotions and
-the catalog are Pydantic-validated JSON files, diffable in git. Rejected: SQLite/Postgres
-(a migration story for read-only data), and promotion-authoring CRUD (seeded config
-instead). This is the single biggest scope cut and it bought the time that went into the
-engine and its tests.
+**Pricing is a pure function; state is one file.** A cart plus its claimed and pinned
+promotions fully determines the result — no request mutates anything. Catalog and seed
+promotions are Pydantic-validated JSON, diffable in git; Postgres was rejected for
+read-only data whose migration story would cost more than it bought, and that cut bought
+the time that went into the engine and its tests. Authoring was later un-deferred (a
+promotion kind is only extensible if a non-engineer can add one), forcing exactly one
+piece of stored state: admin-added promotions appended to a local SQLite file via stdlib
+`sqlite3`, no ORM — the smallest persistence that survives a restart. The cost is worth
+stating plainly: the service is **no longer horizontally scalable as deployed**, since
+each instance would own its own file and promotion set. Fixing that is managed Postgres
+behind the store's existing interface, not a redesign.
 
 **One domain model, one validation layer.** FastAPI + Pydantic v2 so the domain objects
 *are* the API schema. Money is integer cents everywhere — floats never touch a price.
@@ -52,6 +57,16 @@ fallbacks return the naive result with `optimal: false`: a cluster-product cap (
 pathological catalogs, and a per-request sanity check (`0 < optimized ≤ naive`) that
 turns the offline "optimizer never loses to naive" property into a live guard.
 
+Withholding is invisible unless the UI can explain it, and "not applied" covers two
+opposite situations — you don't qualify, versus you qualify and something better won. So
+`/price` also reports, per promotion, eligibility judged against the *winning*
+combination's cascade state (a $110 cart really can miss a $100 shipping bar once item
+deals land), the shortfall to qualifying, and what it conflicts with. Pinning is the
+inverse: it constrains the search to combinations where a chosen promotion actually
+applies, so a shopper can overrule the optimizer. Pins are strictly a restriction, which
+breaks the ≤-naive guard by design — under a pin the guard becomes "were the pins
+honored", or the shopper's own choice would be silently discarded.
+
 ## Testing
 
 Five layers, chosen for what each uniquely catches (`docs/testing-strategy.md`):
@@ -62,8 +77,10 @@ both engines *and* the raw HTTP body; golden receipts with fully hand-derived ar
 exclusivity matrix, each row guarded against vacuous passes; per-kind unit tests via a
 registry-parametrized contract (a new kind inherits them for free); API integration
 tests with no mocks. Deliberately no line-coverage target, no testing what Pydantic/
-FastAPI already enforce, one frontend smoke test only, and no flaky-test allowance —
-a failing property is a bug or a wrong property, never a retry. 192 backend tests, ~2 s.
+FastAPI already enforce, and no flaky-test allowance — a failing property is a bug or a
+wrong property, never a retry. 267 backend tests, ~2.7 s; 12 frontend, ~3 s — the planned
+single smoke test grew once the deals UI carried behaviour it could not see, and each new
+test was checked to fail against the behaviour it replaced.
 
 ## Process
 
@@ -74,26 +91,27 @@ checkpoints (API-only via curl after the engine; full UI two issues later).
 Implementation ran as parallel agents in git worktrees with hard file boundaries
 (`.claude/agents/`), feature branches squash-merged to `staging`, and epics merged to
 `main` only when green. CI (ruff, ruff format, pyright strict, pytest, eslint, prettier,
-tsc, vitest smoke) gates every PR; pre-commit mirrors the fast checks locally.
+tsc, vitest, build) gates every PR; pre-commit mirrors the fast checks locally.
 
 ## Deferred (deliberately out of scope — `docs/scope.md`)
 
-Auth/multi-tenancy; promotion authoring UI/CRUD; persistence (revised later: issue #75
-persists runtime-added promotions to a local SQLite file via stdlib `sqlite3` — pricing
-stays a pure function and the catalog/carts still have no database); multi-currency, tax, real
-shipping rates; real checkout (payment/orders); user-attribute conditions (every
-condition is cart-derived today); promotion expiration and usage limits (needs its own
-design — today's promotions are always-available); frontend test depth beyond the smoke
-test. Also noted for later: Starlette is deprecating its `httpx` TestClient shim — the
-dev dependency should move to `httpx2` when it lands.
+Auth/multi-tenancy — which is why the admin API is unauthenticated, fine for a demo and
+not for the public URL it is deployed at; multi-currency, tax, real shipping rates; real
+checkout (payment/orders); user-attribute conditions (every condition is cart-derived
+today); promotion expiration and usage limits (needs its own design — today's promotions
+are always-available); a database for the catalog, carts, or orders. Two items came back
+into scope and are described above rather than here: promotion authoring, and the
+persistence it required. Also noted for later: Starlette is deprecating its `httpx`
+TestClient shim — the dev dependency should move to `httpx2` when it lands.
 
 ## With more time
 
 Promotion expiration windows and per-account usage limits (the first thing a real
-business would ask for); a small authoring/preview UI on top of the seed format;
+business would ask for); auth on the admin API before it stays on a public URL; moving
+the promotion store to managed Postgres so the service scales horizontally again;
 heuristic pruning inside the cluster search *only if* a real catalog ever trips the cap;
-multi-instance deployment notes (trivial today — the service is stateless — but
-unproven).
+and a load test — every performance claim here is single-process and in-process, which
+is evidence of the engine's cost, not of the service under concurrency.
 
 ## Intake line
 

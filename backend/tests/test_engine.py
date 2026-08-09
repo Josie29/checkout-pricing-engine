@@ -4,8 +4,14 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from app.clusters import derive_clusters
-from app.domain import Adjustment, Cart, LineAllocation, LineItem, Phase
+from app.domain import (
+    Adjustment,
+    Cart,
+    LineAllocation,
+    LineItem,
+    Phase,
+    PhaseSubtotals,
+)
 from app.engine import (
     EngineConfig,
     EngineInvariantError,
@@ -13,8 +19,10 @@ from app.engine import (
     price_combination,
     price_naive,
 )
-from app.promotions import Promotion
+from app.promotion_kinds import FixedOffItem
+from app.promotions import CategoryTarget, Promotion, SkuTarget
 from app.seeds import load_seed_catalog, load_seed_promotions
+from tests.legality import assert_no_overlapping_pair
 
 CATALOG = {item.sku: item for item in load_seed_catalog()}
 SEED_PROMOTIONS = load_seed_promotions()
@@ -32,6 +40,11 @@ def line(sku: str, qty: int = 1) -> LineItem:
         unit_price_cents=item.unit_price_cents,
         qty=qty,
     )
+
+
+def fixed_off(promo_id: str, target: SkuTarget | CategoryTarget) -> Promotion:
+    """A synthetic $1-off Item-phase promotion with an arbitrary line target."""
+    return FixedOffItem(id=promo_id, name=promo_id, target=target, amount_off_cents=100)
 
 
 def golden_cart() -> Cart:
@@ -55,21 +68,21 @@ class TestGoldenCascade:
         assert result.adjustments == [
             Adjustment(
                 promotion_id="P1",
-                promotion_name="Beans: buy 2 get 1 free",
+                promotion_name="Coffee Beans: buy 2 get 1 free",
                 phase=Phase.ITEM,
                 amount_cents=1500,
                 line_allocations=[LineAllocation(sku="COF-DEC", amount_cents=1500)],
             ),
             Adjustment(
                 promotion_id="P4",
-                promotion_name="$5 off pour-over dripper",
+                promotion_name="$5.00 off Ceramic Pour-Over Dripper",
                 phase=Phase.ITEM,
                 amount_cents=500,
                 line_allocations=[LineAllocation(sku="BREW-V60", amount_cents=500)],
             ),
             Adjustment(
                 promotion_id="P2",
-                promotion_name="15% off $50+",
+                promotion_name="15% off $50.00+",
                 phase=Phase.CART,
                 amount_cents=825,
                 line_allocations=[
@@ -85,6 +98,20 @@ class TestGoldenCascade:
         assert result.discount_total_cents == 2825
         assert result.shipping_cents == 1000
         assert result.total_cents == 5675
+
+    def test_phase_subtotals_trace_the_cascade_boundaries(self) -> None:
+        """Catches the deals explainer narrating wrong intermediate numbers.
+
+        The checkout's "how deals work" walkthrough renders after-item and
+        after-cart subtotals verbatim; if the cascade stops recording them
+        (or records pre-discount values), the UI would tell shoppers a
+        cart percent was taken off the wrong base.
+        """
+        outcome = price_naive(golden_cart(), SEED_PROMOTIONS, set(SEED_IDS))
+        # 7500 - (1500 P1 + 500 P4) = 5500; 5500 - 825 P2 = 4675.
+        assert outcome.result.phase_subtotals == PhaseSubtotals(
+            after_item_cents=5500, after_cart_cents=4675
+        )
 
     def test_statuses_report_applied_claimed_and_available(self) -> None:
         """On the golden cart, every status lands per the spec's table.
@@ -117,7 +144,7 @@ class TestGoldenCascade:
         assert result.adjustments == [
             Adjustment(
                 promotion_id="P7",
-                promotion_name="Free shipping $100+",
+                promotion_name="Free shipping $100.00+",
                 phase=Phase.SHIPPING,
                 amount_cents=1000,
             )
@@ -212,6 +239,74 @@ class TestDeclarationOrder:
         outcome = price_naive(cart, SEED_PROMOTIONS, {"P6"})
         assert [adj.promotion_id for adj in outcome.result.adjustments] == ["P6"]
         assert outcome.result.discount_total_cents == 1920
+
+
+class TestPerLineExclusivity:
+    """Exclusivity is per line item, not per conflict cluster."""
+
+    def test_two_sku_deals_on_different_lines_both_apply(self) -> None:
+        """$1 off Ethiopia and $1 off Colombia stack — they share no line.
+
+        The naive half of the shopper-visible regression: with a Coffee
+        Beans promotion also claimed, all three chain into one cluster, and
+        first-eligible-per-cluster silently dropped one $1 deal. Catches a
+        shopper being shown only one of two deals that target different
+        products.
+        """
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        promos = [
+            *SEED_PROMOTIONS,
+            fixed_off("A1", SkuTarget(sku="COF-ETH")),
+            fixed_off("A2", SkuTarget(sku="COF-COL")),
+        ]
+        outcome = price_naive(cart, promos, {promo.id for promo in promos})
+        assert [adj.promotion_id for adj in outcome.result.adjustments] == ["A1", "A2"]
+        assert outcome.result.discount_total_cents == 200
+
+    def test_the_bridging_category_deal_still_blocks_both(self) -> None:
+        """Claiming the Coffee Beans deal alone takes both lines, not one plus.
+
+        The other direction: once the category deal is applied it owns both
+        bean lines, so neither SKU deal may join it. Catches an
+        independent-set search that treats "different promotion" as
+        "different resource" and double-discounts a line.
+        """
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        beans = fixed_off("B1", CategoryTarget(category="Coffee Beans"))
+        promos = [beans, fixed_off("A1", SkuTarget(sku="COF-ETH"))]
+        outcome = price_naive(cart, promos, {"B1", "A1"})
+        assert [adj.promotion_id for adj in outcome.result.adjustments] == ["B1"]
+        assert outcome.statuses["A1"] is PromotionStatus.CLAIMED
+
+    def test_price_combination_accepts_the_disjoint_pair(self) -> None:
+        """The shared core prices two non-overlapping item promos together.
+
+        Catches the legality guard rejecting a combination the optimizer
+        may legitimately propose — that would surface as a 500, not a
+        missing discount.
+        """
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        combination = [
+            fixed_off("A1", SkuTarget(sku="COF-ETH")),
+            fixed_off("A2", SkuTarget(sku="COF-COL")),
+        ]
+        result = price_combination(cart, combination)
+        assert result.discount_total_cents == 200
+        assert [adj.promotion_id for adj in result.adjustments] == ["A1", "A2"]
+
+    def test_price_combination_rejects_an_overlapping_pair(self) -> None:
+        """A SKU promo plus the category promo covering it is still illegal.
+
+        Catches the guard being loosened all the way to "anything goes"
+        when it was narrowed from clusters to pairs.
+        """
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        combination = [
+            fixed_off("B1", CategoryTarget(category="Coffee Beans")),
+            fixed_off("A1", SkuTarget(sku="COF-ETH")),
+        ]
+        with pytest.raises(EngineInvariantError, match="B1, A1"):
+            price_combination(cart, combination)
 
 
 class TestStatusModel:
@@ -375,10 +470,10 @@ class TestInvariantsProperty:
 
         Catches any cart shape where the cascade produces a receipt that
         does not add up (the PricingResult validators re-run on every
-        construction), applies an unclaimed promotion, stacks two members
-        of one cluster, or disagrees with the reusable core when handed
-        its own applied set — the exact parity #25 relies on to trust
-        `price_combination` as the single pricing path.
+        construction), applies an unclaimed promotion, stacks two
+        promotions onto one line, or disagrees with the reusable core when
+        handed its own applied set — the exact parity #25 relies on to
+        trust `price_combination` as the single pricing path.
         """
         outcome = price_naive(cart, SEED_PROMOTIONS, claimed)
         result = outcome.result
@@ -390,11 +485,8 @@ class TestInvariantsProperty:
         }
         assert applied <= claimed
         assert applied == {adj.promotion_id for adj in result.adjustments}
-        claimed_promos = [promo for promo in SEED_PROMOTIONS if promo.id in claimed]
-        for cluster in derive_clusters(cart, claimed_promos).all_clusters():
-            in_cluster = sum(1 for promo in cluster.promotions if promo.id in applied)
-            assert in_cluster <= 1
         applied_promos = [promo for promo in SEED_PROMOTIONS if promo.id in applied]
+        assert_no_overlapping_pair(applied_promos, cart)
         assert price_combination(cart, applied_promos) == result
         # Determinism: repricing the identical request changes nothing.
         assert price_naive(cart, SEED_PROMOTIONS, claimed) == outcome

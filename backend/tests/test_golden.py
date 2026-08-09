@@ -69,7 +69,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P1",
-                    "promotion_name": "Beans: buy 2 get 1 free",
+                    "promotion_name": "Coffee Beans: buy 2 get 1 free",
                     "phase": "item",
                     "amount_cents": 1400,
                     "line_allocations": [{"sku": "COF-COL", "amount_cents": 1400}],
@@ -80,6 +80,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 3800,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 2800,
+                "after_cart_cents": 2800,
+            },
             "promotion_statuses": {
                 "P1": "applied",
                 "P6": "available",
@@ -87,6 +91,33 @@ class TestGoldenReceipts:
                 "P2": "available",
                 "P5": "available",
                 "P7": "available",
+            },
+            # Availability is the "why" behind those statuses. Both bean
+            # deals qualify (3 bags >= min 3) and conflict, because COF-COL
+            # is a Coffee Beans line both target. P4's dripper is not in the
+            # cart. The cart/shipping thresholds are measured against the
+            # cascade state, i.e. the post-item 2800 — NOT the 4200 subtotal:
+            #   P2: 5000 - 2800 = 2200 short
+            #   P5/P7: 10000 - 2800 = 7200 short
+            "promotion_availability": {
+                "P1": {"eligible": True, "gap": None, "conflicts_with": ["P6"]},
+                "P6": {"eligible": True, "gap": None, "conflicts_with": ["P1"]},
+                "P4": {"eligible": False, "gap": None, "conflicts_with": []},
+                "P2": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 2200, "qty_short": None},
+                    "conflicts_with": ["P5"],
+                },
+                "P5": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 7200, "qty_short": None},
+                    "conflicts_with": ["P2"],
+                },
+                "P7": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 7200, "qty_short": None},
+                    "conflicts_with": [],
+                },
             },
         }
 
@@ -134,7 +165,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P6",
-                    "promotion_name": "Beans: bulk 20% off",
+                    "promotion_name": "Coffee Beans: 20% off (min 3)",
                     "phase": "item",
                     "amount_cents": 1920,
                     "line_allocations": [{"sku": "COF-ETH", "amount_cents": 1920}],
@@ -145,6 +176,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 8680,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 7680,
+                "after_cart_cents": 7680,
+            },
             "promotion_statuses": {
                 "P1": "claimed",
                 "P6": "applied",
@@ -152,6 +187,29 @@ class TestGoldenReceipts:
                 "P2": "available",
                 "P5": "available",
                 "P7": "available",
+            },
+            # The status contract cannot say why P1 is "claimed"; this can.
+            # P1 is eligible and merely lost its slot to P6 (the checkout
+            # keeps it live and lets the shopper force it), whereas P5/P7
+            # are genuinely unqualified against the post-item 7680:
+            #   P5/P7: 10000 - 7680 = 2320 short
+            # P2 qualifies unclaimed (7680 >= 5000) — eligibility is a fact
+            # about the cart, independent of what the shopper toggled.
+            "promotion_availability": {
+                "P1": {"eligible": True, "gap": None, "conflicts_with": ["P6"]},
+                "P6": {"eligible": True, "gap": None, "conflicts_with": ["P1"]},
+                "P4": {"eligible": False, "gap": None, "conflicts_with": []},
+                "P2": {"eligible": True, "gap": None, "conflicts_with": ["P5"]},
+                "P5": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 2320, "qty_short": None},
+                    "conflicts_with": ["P2"],
+                },
+                "P7": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 2320, "qty_short": None},
+                    "conflicts_with": [],
+                },
             },
         }
 
@@ -173,8 +231,10 @@ class TestGoldenReceipts:
         P2's 750 splits by line subtotals 2800:2200 out of 5000:
           BREW-V60: 750 * 2800 / 5000 = 420 exactly
           MUG-TVL:  750 * 2200 / 5000 = 330 exactly (no remainder cents)
-        P4 stays "claimed" — withheld is indistinguishable from ineligible
-        in the frozen status contract.
+        P4 stays "claimed": the status contract cannot distinguish withheld
+        from ineligible, which is exactly why `promotion_availability` is
+        frozen alongside it below — there P4 reads `eligible: true` with no
+        gap, the one state that means "qualifies, but a rival won".
         """
         response = _price(
             [
@@ -222,7 +282,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P2",
-                    "promotion_name": "15% off $50+",
+                    "promotion_name": "15% off $50.00+",
                     "phase": "cart",
                     "amount_cents": 750,
                     "line_allocations": [
@@ -236,6 +296,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 5250,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 5000,
+                "after_cart_cents": 4250,
+            },
             "promotion_statuses": {
                 "P1": "available",
                 "P6": "available",
@@ -243,6 +307,39 @@ class TestGoldenReceipts:
                 "P2": "applied",
                 "P5": "available",
                 "P7": "available",
+            },
+            # P4: eligible, no gap, and NOT applied — the withheld state the
+            # docstring calls out. The bean deals are unqualified for a
+            # different reason (no Coffee Beans line at all, so 3 units
+            # short of min_qty 3), which is why one greys out and the other
+            # does not. Note the empty conflict lists: with no Coffee Beans
+            # line on this cart, P1 and P6 cannot collide, so exclusivity is
+            # a property of the cart, not of the promotion pair.
+            #   P5: 10000 - 5000 (post-item) = 5000 short
+            #   P7: 10000 - 4250 (post-cart) = 5750 short
+            "promotion_availability": {
+                "P1": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": None, "qty_short": 3},
+                    "conflicts_with": [],
+                },
+                "P6": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": None, "qty_short": 3},
+                    "conflicts_with": [],
+                },
+                "P4": {"eligible": True, "gap": None, "conflicts_with": []},
+                "P2": {"eligible": True, "gap": None, "conflicts_with": ["P5"]},
+                "P5": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 5000, "qty_short": None},
+                    "conflicts_with": ["P2"],
+                },
+                "P7": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 5750, "qty_short": None},
+                    "conflicts_with": [],
+                },
             },
         }
 
@@ -318,14 +415,14 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P4",
-                    "promotion_name": "$5 off pour-over dripper",
+                    "promotion_name": "$5.00 off Ceramic Pour-Over Dripper",
                     "phase": "item",
                     "amount_cents": 500,
                     "line_allocations": [{"sku": "BREW-V60", "amount_cents": 500}],
                 },
                 {
                     "promotion_id": "P5",
-                    "promotion_name": "20% off $100+",
+                    "promotion_name": "20% off $100.00+",
                     "phase": "cart",
                     "amount_cents": 3160,
                     "line_allocations": [
@@ -335,7 +432,7 @@ class TestGoldenReceipts:
                 },
                 {
                     "promotion_id": "P7",
-                    "promotion_name": "Free shipping $100+",
+                    "promotion_name": "Free shipping $100.00+",
                     "phase": "shipping",
                     "amount_cents": 1000,
                     "line_allocations": [],
@@ -346,6 +443,10 @@ class TestGoldenReceipts:
             "shipping_cents": 0,
             "total_cents": 12640,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 15800,
+                "after_cart_cents": 12640,
+            },
             "promotion_statuses": {
                 "P1": "available",
                 "P6": "available",
@@ -353,6 +454,27 @@ class TestGoldenReceipts:
                 "P2": "available",
                 "P5": "applied",
                 "P7": "applied",
+            },
+            # Every gear-cart deal qualifies, including the unclaimed P2 —
+            # 15800 clears its 5000 bar too; it simply lost the cart slot to
+            # the better P5 (they always conflict: one cart subtotal, one
+            # winner). Only the bean deals fall short, by the full min_qty 3
+            # since no Coffee Beans line exists.
+            "promotion_availability": {
+                "P1": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": None, "qty_short": 3},
+                    "conflicts_with": [],
+                },
+                "P6": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": None, "qty_short": 3},
+                    "conflicts_with": [],
+                },
+                "P4": {"eligible": True, "gap": None, "conflicts_with": []},
+                "P2": {"eligible": True, "gap": None, "conflicts_with": ["P5"]},
+                "P5": {"eligible": True, "gap": None, "conflicts_with": ["P2"]},
+                "P7": {"eligible": True, "gap": None, "conflicts_with": []},
             },
         }
 
@@ -446,7 +568,7 @@ class TestGoldenReceipts:
             "adjustments": [
                 {
                     "promotion_id": "P2",
-                    "promotion_name": "15% off $50+",
+                    "promotion_name": "15% off $50.00+",
                     "phase": "cart",
                     "amount_cents": 800,
                     "line_allocations": [
@@ -461,6 +583,10 @@ class TestGoldenReceipts:
             "shipping_cents": 1000,
             "total_cents": 5530,
             "optimal": True,
+            "phase_subtotals": {
+                "after_item_cents": 5330,
+                "after_cart_cents": 4530,
+            },
             "promotion_statuses": {
                 "P1": "available",
                 "P6": "available",
@@ -468,5 +594,37 @@ class TestGoldenReceipts:
                 "P2": "applied",
                 "P5": "available",
                 "P7": "available",
+            },
+            # Clearance lines match no promotion target, so the item deals
+            # are unqualified and conflict-free. The two shortfalls read off
+            # different cascade states, which is the whole point of
+            # measuring after deals:
+            #   P5 (cart phase):     10000 - 5330 (post-item) = 4670 short
+            #   P7 (shipping phase): 10000 - 4530 (post-cart) = 5470 short
+            # P7 is further from qualifying than P5 precisely because P2's
+            # 800 landed in between.
+            "promotion_availability": {
+                "P1": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": None, "qty_short": 3},
+                    "conflicts_with": [],
+                },
+                "P6": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": None, "qty_short": 3},
+                    "conflicts_with": [],
+                },
+                "P4": {"eligible": False, "gap": None, "conflicts_with": []},
+                "P2": {"eligible": True, "gap": None, "conflicts_with": ["P5"]},
+                "P5": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 4670, "qty_short": None},
+                    "conflicts_with": ["P2"],
+                },
+                "P7": {
+                    "eligible": False,
+                    "gap": {"subtotal_short_cents": 5470, "qty_short": None},
+                    "conflicts_with": [],
+                },
             },
         }

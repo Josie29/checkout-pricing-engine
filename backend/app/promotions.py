@@ -118,6 +118,26 @@ def targets_can_overlap(
     return first.kind == second.kind
 
 
+class EligibilityGap(BaseModel):
+    """How far a cart falls short of a promotion's condition.
+
+    Display-only: the UI turns this into "add $10.00 to qualify" or "add 2
+    more to qualify" under a promotion the shopper cannot claim yet. Both
+    fields are integer shortfalls in the promotion's own units, never
+    formatted money — the frontend owns presentation (docs/tech-stack.md's
+    integer-cents rule).
+
+    A kind may report either, both, or neither: a promotion whose condition
+    is not a threshold (FixedOffItem is eligible whenever a line matches) has
+    no meaningful distance to report and returns None from `gap` instead.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    subtotal_short_cents: int | None = Field(default=None, gt=0)
+    qty_short: int | None = Field(default=None, gt=0)
+
+
 class Promotion(BaseModel, ABC):
     """Abstract interface every promotion kind implements.
 
@@ -175,6 +195,25 @@ class Promotion(BaseModel, ABC):
             An adjustment naming what was discounted, on which lines, and by
             how much in integer cents.
         """
+
+    def gap(self, cart: Cart) -> EligibilityGap | None:
+        """How far `cart` falls short of this promotion's condition.
+
+        Only meaningful when `is_eligible(cart)` is False — the checkout
+        greys such a promotion out and reads this to tell the shopper what
+        would unlock it. Defaults to None (no distance to report), so a new
+        kind stays a one-class change: overriding is opt-in, and a kind whose
+        condition is not a threshold correctly says nothing.
+
+        Args:
+            cart: The same phase-cascade state `is_eligible` was checked
+                against, so the shortfall matches the reason it failed.
+
+        Returns:
+            The shortfall, or None if this kind has no threshold to be short
+            of (or `cart` already satisfies it).
+        """
+        return None
 
 
 PROMOTION_REGISTRY: dict[str, type[Promotion]] = {}

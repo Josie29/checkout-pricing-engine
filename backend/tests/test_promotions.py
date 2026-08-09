@@ -124,7 +124,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "BXGY",
             "id": "P1",
-            "name": "Beans: buy 2 get 1 free",
+            "name": "Coffee Beans: buy 2 get 1 free",
             "target": {"kind": "category", "category": "Coffee Beans"},
             "min_qty": 3,
         },
@@ -141,7 +141,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "PCT_OFF_ITEM",
             "id": "P6",
-            "name": "Beans: bulk 20% off",
+            "name": "Coffee Beans: 20% off (min 3)",
             "target": {"kind": "category", "category": "Coffee Beans"},
             "min_qty": 3,
             "percent_off": 20,
@@ -154,7 +154,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "FIXED_OFF_ITEM",
             "id": "P4",
-            "name": "$5 off pour-over dripper",
+            "name": "$5.00 off Ceramic Pour-Over Dripper",
             "target": {"kind": "sku", "sku": "BREW-V60"},
             "amount_off_cents": 500,
         },
@@ -178,7 +178,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "PCT_OFF_CART",
             "id": "P2",
-            "name": "15% off $50+",
+            "name": "15% off $50.00+",
             "target": {"kind": "cart"},
             "min_subtotal_cents": 5000,
             "percent_off": 15,
@@ -191,7 +191,7 @@ CONTRACT_FIXTURES: dict[str, KindContractFixture] = {
         seed_entry={
             "type": "FREE_SHIPPING",
             "id": "P7",
-            "name": "Free shipping $100+",
+            "name": "Free shipping $100.00+",
             "target": {"kind": "shipping"},
             "min_subtotal_cents": 10000,
         },
@@ -280,6 +280,42 @@ class TestGenericPromotionContract:
         before = cart.model_dump()
         assert promotion.is_eligible(cart) == promotion.is_eligible(cart)
         assert cart.model_dump() == before
+
+    @pytest.mark.parametrize("type_key", sorted(PROMOTION_REGISTRY))
+    def test_gap_is_silent_when_the_cart_already_qualifies(self, type_key: str) -> None:
+        """A qualifying cart has no shortfall to report.
+
+        Catches a kind computing its gap from the wrong side of the
+        comparison: the checkout would tell a shopper to "add $12 to
+        qualify" for a deal that is already applying to their cart.
+        """
+        promotion = parse_fixture_promotion(type_key)
+        assert promotion.gap(CONTRACT_FIXTURES[type_key].eligible_cart) is None
+
+    @pytest.mark.parametrize("type_key", sorted(PROMOTION_REGISTRY))
+    def test_gap_is_pure_and_agrees_with_ineligibility(self, type_key: str) -> None:
+        """`gap` never mutates, repeats itself, and only reports real gaps.
+
+        A gap is optional (kinds without a threshold return None), but a
+        reported one must be strictly positive — a zero or negative
+        "shortfall" would render as "add $0.00 to qualify" next to a deal
+        the shopper cannot have. Catches a kind whose gap disagrees with its
+        own `is_eligible`.
+        """
+        promotion = parse_fixture_promotion(type_key)
+        cart = CONTRACT_FIXTURES[type_key].ineligible_cart
+        before = cart.model_dump()
+        gap = promotion.gap(cart)
+        assert gap == promotion.gap(cart)
+        assert cart.model_dump() == before
+        if gap is not None:
+            reported = [
+                value
+                for value in (gap.subtotal_short_cents, gap.qty_short)
+                if value is not None
+            ]
+            assert reported, "a gap must report at least one shortfall"
+            assert all(value > 0 for value in reported)
 
     @pytest.mark.parametrize("type_key", sorted(PROMOTION_REGISTRY))
     def test_apply_is_deterministic_and_does_not_mutate(self, type_key: str) -> None:

@@ -77,6 +77,7 @@ class TestAddPromotion:
             "phase": "item",
             "target": {"kind": "sku", "sku": "MUG-TVL"},
             "params": {"amount_off_cents": 200},
+            "source": "runtime",
         }
         priced = _price(
             [
@@ -162,6 +163,118 @@ class TestAddPromotion:
         assert "SKU or category target" in response.json()["detail"]
 
 
+class TestStructuralDuplicates:
+    """POST /promotions rejects re-authored copies of existing deals.
+
+    A duplicate means the same type, target, and parameters — only id and
+    name differing.
+    """
+
+    def test_duplicate_of_a_seed_is_422_naming_the_original(self) -> None:
+        """Catches twin deals: re-authoring an existing deal must 422.
+
+        The detail names the original so the admin can find it.
+        """
+        response = client.post(
+            "/promotions",
+            json={
+                "type": "BXGY",
+                "name": "Beans again",
+                "target": {"kind": "category", "category": "Coffee Beans"},
+                "min_qty": 3,
+                "free_qty": 1,
+            },
+        )
+        assert response.status_code == 422
+        assert "'P1'" in response.json()["detail"]
+
+    def test_different_terms_are_not_duplicates(self) -> None:
+        """Catches over-eager matching.
+
+        The same kind and target with a different threshold is a distinct
+        deal and must store.
+        """
+        response = client.post(
+            "/promotions",
+            json={
+                "type": "BXGY",
+                "name": "Coffee Beans: buy 4 get 1 free",
+                "target": {"kind": "category", "category": "Coffee Beans"},
+                "min_qty": 5,
+                "free_qty": 1,
+            },
+        )
+        assert response.status_code == 201
+
+
+class TestDeletePromotion:
+    """DELETE /promotions/{id} — the admin list's remove control."""
+
+    def test_delete_removes_the_addition_and_persists(self, db_path: Path) -> None:
+        """Catches a deleted promotion lingering or resurrecting.
+
+        After a 204 the list must not show the addition, and a restarted
+        store must not replay it.
+        """
+        assert client.post("/promotions", json=_MUG_FIXED_OFF).status_code == 201
+        response = client.delete("/promotions/A1")
+        assert response.status_code == 204
+        assert [promo["id"] for promo in client.get("/promotions").json()] == SEED_IDS
+        assert [promo.id for promo in _restarted_store(db_path).all()] == SEED_IDS
+
+    def test_deleting_a_seed_is_422(self) -> None:
+        """Catches the immutable seed set becoming editable via the API."""
+        response = client.delete("/promotions/P1")
+        assert response.status_code == 422
+        assert "seed" in response.json()["detail"]
+        assert [promo["id"] for promo in client.get("/promotions").json()] == SEED_IDS
+
+    def test_deleting_an_unknown_id_is_404(self) -> None:
+        """Catches unknown ids masquerading as successful deletes."""
+        assert client.delete("/promotions/NOPE").status_code == 404
+
+
+class TestAutoAssignedIds:
+    """POST /promotions without an id — the server assigns the next P<n>."""
+
+    def test_omitted_id_gets_next_free_p_number(self) -> None:
+        """Catches auto-assignment colliding with or skipping past seeds.
+
+        With seeds P1-P7 stored, the first id-less addition must come back
+        as P8, badge as a runtime addition, and list after the seeds.
+        """
+        entry = {key: value for key, value in _MUG_FIXED_OFF.items() if key != "id"}
+        response = client.post("/promotions", json=entry)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["id"] == "P8"
+        assert body["source"] == "runtime"
+        listed = client.get("/promotions").json()
+        assert [promo["id"] for promo in listed] == [*SEED_IDS, "P8"]
+        assert [promo["source"] for promo in listed] == [*["seed"] * 6, "runtime"]
+
+    def test_assigned_ids_increment_past_prior_additions(self) -> None:
+        """Catches the generator reusing a number a prior addition took."""
+        entry = {key: value for key, value in _MUG_FIXED_OFF.items() if key != "id"}
+        first = client.post("/promotions", json=entry)
+        # Different terms — a second structural duplicate would now 422.
+        second = client.post(
+            "/promotions",
+            json={**entry, "name": "Mug deal 2", "amount_off_cents": 300},
+        )
+        assert [first.json()["id"], second.json()["id"]] == ["P8", "P9"]
+
+    def test_explicit_id_is_still_accepted(self) -> None:
+        """Catches the additive change breaking existing callers.
+
+        A body carrying its own id must store under that id, not a
+        generated one.
+        """
+        response = client.post("/promotions", json=_MUG_FIXED_OFF)
+        assert response.status_code == 201
+        assert response.json()["id"] == "A1"
+
+
 class TestAddedPromotionClusters:
     """Added promotions join conflict clusters with no engine changes."""
 
@@ -202,6 +315,62 @@ class TestAddedPromotionClusters:
         assert [adj["promotion_id"] for adj in body["adjustments"]] == ["A9"]
         assert body["promotion_statuses"]["A9"] == "applied"
         assert body["promotion_statuses"]["P4"] == "claimed"
+
+    def test_per_sku_deals_on_different_lines_both_apply(self) -> None:
+        """Two added $1-off SKU deals stack; the seed bean deals don't block them.
+
+        The end-to-end regression for the reported bug: a shopper with one
+        Ethiopia and one Colombia bag toggled everything on and saw only
+        one $1 deal apply, because P1/P6 (Coffee Beans) chained both SKU
+        deals into a single cluster and the engine allowed one member per
+        cluster. Exclusivity is per line item, so both must apply. Catches
+        any regression to per-cluster exclusivity from the shopper's side.
+        """
+        for sku, name in [
+            ("COF-ETH", "Ethiopia Yirgacheffe"),
+            ("COF-COL", "Colombia Supremo"),
+        ]:
+            added = client.post(
+                "/promotions",
+                json={
+                    "type": "FIXED_OFF_ITEM",
+                    "name": f"$1.00 off {name}",
+                    "target": {"kind": "sku", "sku": sku},
+                    "amount_off_cents": 100,
+                },
+            )
+            assert added.status_code == 201
+        added_ids = [
+            entry["id"]
+            for entry in client.get("/promotions").json()
+            if entry["source"] == "runtime"
+        ]
+        priced = _price(
+            [
+                {
+                    "sku": "COF-ETH",
+                    "category": "Coffee Beans",
+                    "unit_price_cents": 1600,
+                    "qty": 1,
+                },
+                {
+                    "sku": "COF-COL",
+                    "category": "Coffee Beans",
+                    "unit_price_cents": 1400,
+                    "qty": 1,
+                },
+            ],
+            SEED_IDS + added_ids,
+        )
+        assert priced.status_code == 200
+        body = priced.json()
+        # 3000 subtotal - 100 - 100 + 1000 flat shipping. P1/P6 need 3 bags
+        # and the cart thresholds need $50, so nothing else is eligible.
+        assert body["discount_total_cents"] == 200
+        assert body["total_cents"] == 3800
+        assert [adj["promotion_id"] for adj in body["adjustments"]] == added_ids
+        assert all(body["promotion_statuses"][pid] == "applied" for pid in added_ids)
+        assert [line["discount_cents"] for line in body["lines"]] == [100, 100]
 
 
 class TestPromotionsOrdering:

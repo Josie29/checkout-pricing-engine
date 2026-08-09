@@ -62,7 +62,7 @@ GitHub integration on both services: push to `main` → Railway builds and deplo
 ## Deferred
 
 - Custom domain — Railway-provided subdomains are enough for a take-home submission.
-- Autoscaling / multiple instances — the API is stateless (pure function, no DB), so this is trivial to add later if needed; not configured now since load isn't a requirement here.
+- Autoscaling / multiple instances — **no longer trivial**, and deliberately not configured. This was true while the API was a pure function with no storage, but issue #75 gave it one piece of state: runtime-added promotions in a SQLite file on a Railway volume. A second instance would mount its own volume and serve a different promotion set, so scaling out now requires moving that store to a shared database (managed Postgres behind the existing `PromotionStore` interface) — not just raising a replica count. Load is not a requirement here, so the single instance stands.
 - Secrets management — no real secrets exist yet (`CORS_ORIGINS`/`VITE_API_BASE_URL` are public URLs, not credentials); revisit if that changes.
 
 ## Timebox placement

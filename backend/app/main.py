@@ -1,4 +1,7 @@
 import os
+import re
+from collections.abc import Sequence
+from enum import StrEnum
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -6,10 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.catalog import CatalogItem
-from app.domain import Adjustment, Cart, Phase, PricedLine
+from app.domain import Adjustment, Cart, Phase, PhaseSubtotals, PricedLine
+from app.eligibility import PromotionAvailability, describe_availability
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
 from app.optimizer import optimize
-from app.promotion_store import DuplicatePromotionIdError, PromotionStore
+from app.promotion_store import (
+    DuplicatePromotionIdError,
+    PromotionStore,
+    SeedPromotionError,
+    UnknownPromotionIdError,
+)
 from app.promotions import PROMOTION_REGISTRY, Promotion, PromotionTarget
 from app.seed_loader import SeedLoadError, parse_promotions
 from app.seeds import load_seed_catalog, load_seed_promotions
@@ -65,16 +74,27 @@ class PriceRequest(BaseModel):
 
     cart: Cart
     claimed_promotion_ids: list[str] = Field(default_factory=list[str])
+    pinned_promotion_ids: list[str] = Field(default_factory=list[str])
+    """Ids the shopper forced on, overriding the optimizer's choice.
+
+    Additive and optional — omitting it prices exactly as before. A pin
+    implies a claim, and constrains the search to combinations where the
+    pinned promotion actually applies; if none can, the response falls back
+    to the naive outcome with `optimal: false`. Pins are how the checkout
+    lets a shopper take a deal the optimizer withheld, including one no
+    amount of un-claiming rivals would surface (docs/optimizer-spec.md).
+    """
 
 
 class PriceResponse(BaseModel):
     """`POST /price` response: the priced result plus per-promotion statuses.
 
     Carries `PricingResult`'s fields verbatim at the top level (this shape is
-    frozen — #25 swaps in the optimizer's numbers and flips `optimal` without
-    changing it) plus `promotion_statuses`, one entry per stored promotion
-    (seeds and runtime additions alike), so the UI can distinguish
-    claimed-but-ineligible from applied.
+    frozen for existing fields — #25 swaps in the optimizer's numbers and
+    flips `optimal` without changing it; `phase_subtotals` is an additive
+    field for the checkout deals explainer) plus `promotion_statuses`, one
+    entry per stored promotion (seeds and runtime additions alike), so the
+    UI can distinguish claimed-but-ineligible from applied.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -86,7 +106,23 @@ class PriceResponse(BaseModel):
     shipping_cents: int
     total_cents: int
     optimal: bool
+    phase_subtotals: PhaseSubtotals | None
     promotion_statuses: dict[str, PromotionStatus]
+    promotion_availability: dict[str, PromotionAvailability]
+    """Per-promotion eligibility, shortfall, and conflicts (additive).
+
+    `promotion_statuses` reports *what happened*; this reports *why*.
+    Together they give the checkout its three visual states: applied,
+    qualifies-but-beaten (`eligible`, not applied), and does-not-qualify
+    (`eligible: false`, with `gap` to explain the distance).
+    """
+
+
+class PromotionSource(StrEnum):
+    """Where a stored promotion came from — file seeds or the admin API."""
+
+    SEED = "seed"
+    RUNTIME = "runtime"
 
 
 class PromotionInfo(BaseModel):
@@ -94,7 +130,8 @@ class PromotionInfo(BaseModel):
 
     `params` carries the kind-specific condition/effect fields (`min_qty`,
     `percent_off`, ...) so the toggle list can describe each promotion
-    without hardcoding kinds.
+    without hardcoding kinds. `source` (additive) lets the admin page badge
+    seeds vs runtime additions.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -105,6 +142,7 @@ class PromotionInfo(BaseModel):
     phase: Phase
     target: PromotionTarget
     params: dict[str, int]
+    source: PromotionSource
 
 
 # Fields every kind shares (or that are engine-injected mechanics, like
@@ -117,15 +155,16 @@ _TYPE_BY_CLASS: dict[type[Promotion], str] = {
 }
 
 
-def _promotion_info(promotion: Promotion) -> PromotionInfo:
+def _promotion_info(promotion: Promotion, source: PromotionSource) -> PromotionInfo:
     """Project one stored promotion into its `GET /promotions` entry.
 
     Args:
         promotion: A stored (seed or runtime-added) promotion instance.
+        source: Whether the promotion is a file seed or a runtime addition.
 
     Returns:
-        The promotion's identity, type key, phase, target, and kind-specific
-        display parameters.
+        The promotion's identity, type key, phase, target, source, and
+        kind-specific display parameters.
     """
     params = {
         field: value
@@ -139,7 +178,59 @@ def _promotion_info(promotion: Promotion) -> PromotionInfo:
         phase=promotion.phase,
         target=promotion.target,
         params=params,
+        source=source,
     )
+
+
+def _next_promotion_id(existing_ids: set[str]) -> str:
+    """Next free auto-assigned promotion id: one past the highest P-number.
+
+    Ids that don't match `P<digits>` (custom ids callers chose themselves)
+    are ignored — they can never collide with the generated sequence's next
+    value unless they are themselves P-numbered.
+
+    Args:
+        existing_ids: Every stored promotion id, seeds and additions.
+
+    Returns:
+        The id `P<n+1>` where `n` is the highest existing P-number (0 when
+        there is none).
+    """
+    highest = 0
+    for existing in existing_ids:
+        match = re.fullmatch(r"P(\d+)", existing)
+        if match is not None:
+            highest = max(highest, int(match.group(1)))
+    return f"P{highest + 1}"
+
+
+def _find_structural_duplicate(
+    candidate: Promotion, existing: Sequence[Promotion]
+) -> Promotion | None:
+    """Find a stored promotion with the candidate's exact type and terms.
+
+    Identity fields (`id`, `name`) are ignored — two promotions are
+    duplicates when the same kind targets the same thing with the same
+    parameters, which is shopper-facing noise (they share a conflict
+    cluster, so only one could ever apply). Enforced only on new adds:
+    boot replay never runs this, so any pre-existing duplicate keeps
+    loading.
+
+    Args:
+        candidate: The promotion being added.
+        existing: Every stored promotion, seeds and additions.
+
+    Returns:
+        The first structural duplicate, or None.
+    """
+    key = candidate.model_dump(exclude={"id", "name"})
+    for promotion in existing:
+        if (
+            type(promotion) is type(candidate)
+            and promotion.model_dump(exclude={"id", "name"}) == key
+        ):
+            return promotion
+    return None
 
 
 @app.get("/health")
@@ -164,13 +255,22 @@ def price(request: PriceRequest) -> PriceResponse:
     returned with `optimal: False`. Statuses reflect whichever result is
     returned; a claimed promotion the optimizer withheld stays `claimed`.
 
+    When the request pins promotions, that gate is replaced by "were the
+    pins honored" — a pinned combination is deliberately worse than the
+    unpinned optimum, so comparing it to naive would throw the shopper's
+    override away. `optimal` still reads True on a honored pin: it means
+    the search was exhaustive, and with pins the search is over the
+    combinations the shopper allowed. The response carries enough for a
+    caller to show what the override costs (`promotion_availability` plus
+    a re-price with no pins).
+
     Args:
-        request: The cart and the ids of the promotions the shopper toggled
-            on.
+        request: The cart, the ids of the promotions the shopper toggled
+            on, and any the shopper forced on.
 
     Returns:
-        The itemized result, explanation trace, totals, `optimal`, and one
-        status per stored promotion.
+        The itemized result, explanation trace, totals, `optimal`, one
+        status per stored promotion, and per-promotion availability.
 
     Raises:
         HTTPException: 422 if a claimed id names no seeded promotion.
@@ -178,17 +278,39 @@ def price(request: PriceRequest) -> PriceResponse:
             bug, surfaced as a 500 rather than mapped to a client error.
     """
     promotions = PROMOTION_STORE.all()
+    # A pin implies a claim, so the naive baseline the sanity check compares
+    # against must consider the same promotion set the optimizer does —
+    # otherwise pinning a deal naive never saw could look like a regression.
+    claimed = sorted(
+        set(request.claimed_promotion_ids) | set(request.pinned_promotion_ids)
+    )
     try:
-        naive = price_naive(request.cart, promotions, request.claimed_promotion_ids)
-        optimized = optimize(request.cart, promotions, request.claimed_promotion_ids)
+        naive = price_naive(request.cart, promotions, claimed)
+        optimized = optimize(
+            request.cart,
+            promotions,
+            claimed,
+            pinned_ids=request.pinned_promotion_ids,
+        )
     except EngineInvariantError:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    pinned = set(request.pinned_promotion_ids)
+    if pinned:
+        # Pins deliberately buy a worse total than the unpinned optimum, and
+        # sometimes worse than naive, so the never-worse-than-naive guard
+        # does not apply and would silently discard the shopper's override.
+        # The guard that does apply: the override was actually honored. If
+        # the optimizer could not satisfy the pins it already fell back, and
+        # this returns the naive outcome rather than a price nobody asked
+        # for.
+        applied = {adj.promotion_id for adj in optimized.result.adjustments}
+        outcome = optimized if pinned <= applied else naive
     # Runtime sanity check (docs/optimizer-spec.md): a live guard, not just
     # an offline property test. A legitimately-zero optimized total also
     # falls back — naive would be zero too, so nothing is lost.
-    if 0 < optimized.result.total_cents <= naive.result.total_cents:
+    elif 0 < optimized.result.total_cents <= naive.result.total_cents:
         outcome = optimized
     else:
         outcome = naive
@@ -201,7 +323,9 @@ def price(request: PriceRequest) -> PriceResponse:
         shipping_cents=result.shipping_cents,
         total_cents=result.total_cents,
         optimal=result.optimal,
+        phase_subtotals=result.phase_subtotals,
         promotion_statuses=outcome.statuses,
+        promotion_availability=describe_availability(request.cart, promotions, result),
     )
 
 
@@ -213,21 +337,32 @@ def promotions() -> list[PromotionInfo]:
         Seeds first, then runtime additions, in insertion (declaration)
         order — the same order the naive engine breaks cluster ties in.
     """
-    return [_promotion_info(promotion) for promotion in PROMOTION_STORE.all()]
+    addition_ids = PROMOTION_STORE.addition_ids()
+    return [
+        _promotion_info(
+            promotion,
+            PromotionSource.RUNTIME
+            if promotion.id in addition_ids
+            else PromotionSource.SEED,
+        )
+        for promotion in PROMOTION_STORE.all()
+    ]
 
 
 @app.post("/promotions", status_code=201)
 def add_promotion(entry: dict[str, object]) -> PromotionInfo:
     """Add one promotion at runtime (issue #68's unauthenticated admin API).
 
-    The body is exactly one seed-entry object — the same shape as an
-    `app/seeds/promotions.json` entry: a `type` registry key, `id`, `name`,
-    `target`, and the kind's own fields. It is validated through the seed
-    loader, so every seed rule applies (registered kind, correctly-scoped
-    target, kind field constraints). The addition is persisted to the
-    store's SQLite file (issue #75) and survives restarts; `POST /price`
-    picks it up immediately with no engine changes, since clusters and the
-    optimizer derive everything from the promotion list.
+    The body is one seed-entry object — the same shape as an
+    `app/seeds/promotions.json` entry: a `type` registry key, `name`,
+    `target`, the kind's own fields, and optionally an `id` (omitted or
+    null, the server assigns the next free `P<n>` and returns it). It is
+    validated through the seed loader, so every seed rule applies
+    (registered kind, correctly-scoped target, kind field constraints).
+    The addition is persisted to the store's SQLite file (issue #75) and
+    survives restarts; `POST /price` picks it up immediately with no
+    engine changes, since clusters and the optimizer derive everything
+    from the promotion list.
 
     Args:
         entry: One raw seed-entry mapping.
@@ -237,18 +372,63 @@ def add_promotion(entry: dict[str, object]) -> PromotionInfo:
         it, with a 201 status.
 
     Raises:
-        HTTPException: 422 if the entry fails seed validation or reuses an
-            existing promotion id (seed or prior addition).
+        HTTPException: 422 if the entry fails seed validation, reuses an
+            existing promotion id (seed or prior addition), or structurally
+            duplicates an existing promotion (same kind, target, and
+            parameters — only id/name differing).
     """
+    stored_entry = dict(entry)
+    if stored_entry.get("id") is None:
+        # Auto-assign the next free P<n> (additive: explicit ids still
+        # accepted). The assigned id is written into the persisted entry so
+        # a restart replays exactly what was validated. A concurrent add
+        # racing to the same number loses in the store and 422s — at admin
+        # rates that is acceptable over holding a lock across validation.
+        stored_entry["id"] = _next_promotion_id(
+            {promotion.id for promotion in PROMOTION_STORE.all()}
+        )
     try:
-        promotion = parse_promotions([entry])[0]
+        promotion = parse_promotions([stored_entry])[0]
     except SeedLoadError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    duplicate = _find_structural_duplicate(promotion, PROMOTION_STORE.all())
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"duplicates existing promotion {duplicate.id!r}"
+                f" ({duplicate.name}) — same type, target, and terms"
+            ),
+        )
     try:
-        PROMOTION_STORE.add(promotion, entry)
+        PROMOTION_STORE.add(promotion, stored_entry)
     except DuplicatePromotionIdError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _promotion_info(promotion)
+    return _promotion_info(promotion, PromotionSource.RUNTIME)
+
+
+@app.delete("/promotions/{promotion_id}", status_code=204)
+def delete_promotion(promotion_id: str) -> None:
+    """Remove one runtime-added promotion (the admin list's remove control).
+
+    Seeds are file-owned and immutable — deleting one is refused. The
+    removal is persisted (write-through, like adds), so it survives
+    restarts. A shopper session that had already claimed the deleted id
+    sees its next `POST /price` fail as a 422; a refresh recovers.
+
+    Args:
+        promotion_id: Id of the addition to remove.
+
+    Raises:
+        HTTPException: 404 if no stored promotion has the id; 422 if the
+            id names a seed.
+    """
+    try:
+        PROMOTION_STORE.remove_addition(promotion_id)
+    except UnknownPromotionIdError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeedPromotionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/catalog")

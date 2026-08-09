@@ -1,115 +1,128 @@
-import type { PromotionInfo, PromotionStatus, PromotionTarget } from '../types'
+import type {
+  DealToggleContext,
+  PromotionAvailability,
+  PromotionInfo,
+  PromotionStatus,
+} from '../types'
 import { formatCents } from '../format'
+import { gapLabel, scopeLabel } from '../promotionLabels'
 
 interface PromotionTogglesProps {
   promotions: PromotionInfo[]
-  claimedIds: readonly string[]
+  /** Catalog sku -> display name, for readable SKU-targeted scope lines. */
+  productNames: ReadonlyMap<string, string>
   /** Statuses from the latest `POST /price` response; null before any price. */
   statuses: Record<string, PromotionStatus> | null
+  /** Eligibility, shortfall, and conflicts from the same response. */
+  availability: Record<string, PromotionAvailability> | null
   /**
    * Cents saved per applied promotion id, straight from the latest
    * response's `adjustments`; null before any price. Display only — no
    * client-side pricing.
    */
   savedCents: Record<string, number> | null
-  onToggle: (id: string, claimed: boolean) => void
-  /** Replace the claimed set wholesale — one update, one debounced reprice. */
-  onSetAllClaimed: (ids: string[]) => void
-  /** True while a `POST /price` is pending; bulk buttons are disabled. */
+  /** True when the shopper has overridden the automatic best combination. */
+  overridden: boolean
+  /**
+   * Cents the override costs against the automatic best, when that best is
+   * known for the current cart; null otherwise (so the reset control still
+   * appears, just without a figure).
+   */
+  overrideCostCents: number | null
+  /** Deals the latest response applied, in trace order. */
+  appliedIds: string[]
+  /** Force a deal on (`on`) or exclude it (`!on`). */
+  onToggle: (id: string, on: boolean, context: DealToggleContext) => void
+  /** Drop every override and return to the automatic best combination. */
+  onReset: () => void
+  /** True while a `POST /price` is pending; controls are disabled. */
   pricePending: boolean
 }
 
-/**
- * Scope line under a coupon's name, read directly off the promotion's
- * phase/target metadata (no eligibility or amount logic).
- *
- * @param target - The promotion's target.
- * @returns A short human label like "item deal · Coffee Beans".
- */
-function scopeLabel(target: PromotionTarget): string {
-  switch (target.kind) {
-    case 'category':
-      return `item deal · ${target.category}`
-    case 'sku':
-      return `item deal · ${target.sku}`
-    case 'cart':
-      return 'whole-cart deal'
-    case 'shipping':
-      return 'shipping deal'
-  }
-}
+/** The three states a deal card can be in, derived from the server response. */
+type DealState = 'applied' | 'available' | 'ineligible'
 
 /**
- * Coupon-card list of promotions (seed order). Each card is a labelled
- * switch: on = claimed. Statuses stay response-driven — an applied coupon
- * shows the cents it saved (from the response's adjustments), a
- * claimed-but-ineligible one dims with a "not applied" hint. Apply all /
- * Clear all replace the claimed set in a single update, so the checkout
- * fires exactly one reprice.
+ * Deal cards in three unambiguous states, all derived from the server:
+ *
+ * - `applied`   — switch on, highlighted, showing the cents it saved.
+ * - `available` — the cart qualifies but a rival deal won this slot. Normal
+ *                 colouring, switch off, clickable: turning it on pins it,
+ *                 and the server drops whatever it displaces.
+ * - `ineligible`— the cart does not qualify. Greyed and non-interactive,
+ *                 with the shortfall that would unlock it.
+ *
+ * The switch reflects what actually *applied*, not what the shopper claimed,
+ * so it can never disagree with the receipt beside it. Every deal is claimed
+ * by default and the optimizer picks the best combination; the switches exist
+ * for overriding that pick, and `Best deal` undoes every override at once.
  */
 export function PromotionToggles({
   promotions,
-  claimedIds,
+  productNames,
   statuses,
+  availability,
   savedCents,
+  overridden,
+  overrideCostCents,
+  appliedIds,
   onToggle,
-  onSetAllClaimed,
+  onReset,
   pricePending,
 }: PromotionTogglesProps) {
-  const allClaimed = promotions.every((promotion) =>
-    claimedIds.includes(promotion.id),
-  )
-  const noneClaimed = claimedIds.length === 0
   return (
     <section aria-labelledby="promotions-heading">
       <div className="promo-head">
         <h2 id="promotions-heading">Deals</h2>
-        <div className="promotion-bulk-actions">
+        {overridden && (
           <button
             type="button"
-            disabled={allClaimed || pricePending}
-            onClick={() =>
-              onSetAllClaimed(promotions.map((promotion) => promotion.id))
-            }
+            className="reset-deals"
+            disabled={pricePending}
+            onClick={onReset}
           >
-            Apply all
+            {overrideCostCents === null
+              ? 'Best deal'
+              : `Best deal saves ${formatCents(overrideCostCents)}`}
           </button>
-          <button
-            type="button"
-            disabled={noneClaimed || pricePending}
-            onClick={() => onSetAllClaimed([])}
-          >
-            Clear all
-          </button>
-        </div>
+        )}
       </div>
+      <p className="muted promo-intro">
+        Every deal is claimed for you and the best allowed combination is
+        applied automatically. Switch one on to take it instead.
+      </p>
       <ul className="promotion-list">
         {promotions.map((promotion) => {
-          const claimed = claimedIds.includes(promotion.id)
-          const status = statuses?.[promotion.id]
-          const applied = claimed && status === 'applied'
-          const inert = claimed && status === 'claimed'
+          const entry = availability?.[promotion.id]
+          // Before the first response (and against a server too old to send
+          // availability) assume eligible: a live card is recoverable by
+          // clicking, a greyed one is a dead end.
+          const eligible = entry?.eligible ?? true
+          const applied = statuses?.[promotion.id] === 'applied'
+          const state: DealState = applied
+            ? 'applied'
+            : eligible
+              ? 'available'
+              : 'ineligible'
           const saved = savedCents?.[promotion.id]
-          const classes = ['coupon']
-          if (applied) {
-            classes.push('coupon--applied')
-          }
-          if (inert) {
-            classes.push('coupon--inert')
-          }
+          const hint = gapLabel(entry?.gap, promotion.target)
           return (
-            <li key={promotion.id} className={classes.join(' ')}>
+            <li key={promotion.id} className={`coupon coupon--${state}`}>
               <label className="coupon-label">
                 <input
                   type="checkbox"
                   className="coupon-input"
-                  checked={claimed}
+                  checked={applied}
+                  disabled={state === 'ineligible' || pricePending}
                   // Explicit name: the label's visible text also carries the
                   // scope line, which would otherwise concatenate into the
                   // accessible name.
                   aria-label={promotion.name}
                   onChange={(event) =>
-                    onToggle(promotion.id, event.target.checked)
+                    onToggle(promotion.id, event.target.checked, {
+                      appliedIds,
+                      conflictsWith: entry?.conflicts_with ?? [],
+                    })
                   }
                 />
                 {/* Purely visual switch; state lives on the checkbox. */}
@@ -117,16 +130,24 @@ export function PromotionToggles({
                 <span className="coupon-info">
                   <span className="coupon-name">{promotion.name}</span>
                   <span className="coupon-scope">
-                    {scopeLabel(promotion.target)}
+                    {scopeLabel(promotion.target, productNames)}
                   </span>
+                  {state === 'ineligible' && hint !== null && (
+                    <span className="coupon-hint">{hint}</span>
+                  )}
                 </span>
               </label>
-              {applied && saved !== undefined && (
+              {state === 'applied' && saved !== undefined && (
                 <span className="coupon-saved">
                   &minus;{formatCents(saved)}
                 </span>
               )}
-              {inert && <span className="coupon-status">not applied</span>}
+              {state === 'available' && (
+                <span className="coupon-status">qualifies</span>
+              )}
+              {state === 'ineligible' && hint === null && (
+                <span className="coupon-status">not eligible</span>
+              )}
             </li>
           )
         })}
