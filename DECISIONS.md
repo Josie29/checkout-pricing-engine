@@ -93,25 +93,11 @@ Implementation ran as parallel agents in git worktrees with hard file boundaries
 `main` only when green. CI (ruff, ruff format, pyright strict, pytest, eslint, prettier,
 tsc, vitest, build) gates every PR; pre-commit mirrors the fast checks locally.
 
-## Deferred (deliberately out of scope — `docs/scope.md`)
+## Scope and what comes next
 
-Auth/multi-tenancy — which is why the admin API is unauthenticated, fine for a demo and
-not for the public URL it is deployed at; multi-currency, tax, real shipping rates; real
-checkout (payment/orders); user-attribute conditions (every condition is cart-derived
-today); promotion expiration and usage limits (needs its own design — today's promotions
-are always-available); a database for the catalog, carts, or orders. Two items came back
-into scope and are described above rather than here: promotion authoring, and the
-persistence it required. Also noted for later: Starlette is deprecating its `httpx`
-TestClient shim — the dev dependency should move to `httpx2` when it lands.
-
-## With more time
-
-Promotion expiration windows and per-account usage limits (the first thing a real
-business would ask for); auth on the admin API before it stays on a public URL; moving
-the promotion store to managed Postgres so the service scales horizontally again;
-heuristic pruning inside the cluster search *only if* a real catalog ever trips the cap;
-and a load test — every performance claim here is single-process and in-process, which
-is evidence of the engine's cost, not of the service under concurrency.
+Both live in [`docs/scope.md`](docs/scope.md) — what was cut and why, and the ordered
+list of what a second pass would take on. Not repeated here: one list that drifts is
+worse than one list that is read.
 
 ## Intake line
 

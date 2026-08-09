@@ -27,7 +27,10 @@ High-level component breakdown. Backend is the focus; frontend stays minimal.
 | Price breakdown panel | Itemized lines, per-promotion explanation, final total; recomputes on change | Core |
 | Error/empty states | Loading, API failure, no results | Core |
 
-## Deferred (TODO: document in DECISIONS.md)
+## Deferred
+
+This section is the single source for what was cut and what comes next; `DECISIONS.md`
+points here rather than repeating it.
 
 - Auth / multi-tenant anything
 - ~~Promotion authoring UI or CRUD~~ — un-deferred (issue #68) as a runtime API (`POST /promotions`) + admin form; additions persist to SQLite as of issue #75 (below). Admin is unauthenticated by scope (auth is deferred above).
@@ -37,6 +40,17 @@ High-level component breakdown. Backend is the focus; frontend stays minimal.
 - User-attribute-based promotion conditions (e.g. an `is_member` flag) — simplification for now; every condition is cart/item-derived
 - Promotion expiration/usage limits — expiration dates, one-time-use vs. N-uses vs. unlimited-in-period. Undecided, needs its own decision; today's promotions are always-available with no usage tracking
 - Cloud deployment — optional bonus per BRIEF.md (issue #6), not attempted until Core is done and stable. Decided: Railway, two separate services (backend, frontend) under one Railway project, infra as code via a checked-in `railway.toml` — not configured by hand through the dashboard. Full plan in `docs/deployment-plan.md`.
+
+## Next, in order
+
+What a second pass would take on, most valuable first:
+
+- **Promotion expiration windows and per-account usage limits** — the first thing a real business asks for, and the one deferral with no design yet.
+- **Auth on the admin API** — it is unauthenticated on a public URL today, which is fine for a demo and not for anything else.
+- **Move the promotion store to managed Postgres.** The SQLite file (issue #75) means the service is no longer horizontally scalable: a second instance would own its own file and its own promotion set. The store already sits behind one interface, so this is a driver swap, not a redesign.
+- **A load test.** Every performance number claimed anywhere in this repo is single-process and in-process — evidence of the engine's cost, not of the service under concurrency. That distinction is currently asserted rather than shown.
+- **Heuristic pruning inside the cluster search** — only if a real catalog ever trips the cluster-product cap (see the limitations below).
+- Housekeeping: Starlette is deprecating its `httpx` TestClient shim; the dev dependency should move to `httpx2` when it lands.
 
 ## Known limitations of the optimizer
 

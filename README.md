@@ -13,7 +13,8 @@ the shopper, not just the first that fits.
   authoring promotions; renders the server's itemized result verbatim (no client-side
   price math)
 - [DECISIONS.md](DECISIONS.md) — the architectural choices and trade-offs
-- `docs/` — the specs the code was built against (scope, engine, optimizer, testing)
+- [docs/scope.md](docs/scope.md) — what was deliberately cut, and what comes next
+- `docs/` — the specs the code was built against (engine, optimizer, testing, deployment)
 
 ## Run
 
