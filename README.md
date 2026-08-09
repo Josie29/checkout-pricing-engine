@@ -5,14 +5,23 @@ given a cart and a set of active promotions, it computes an itemized final price
 per-promotion explanation — and picks the *best allowed* combination of promotions for
 the shopper, not just the first that fits.
 
-- FastAPI + Pydantic v2 backend (`backend/`), stateless — pricing is a pure function of
-  the request; promotions and catalog are seeded JSON, no database
-- Vite + React + TypeScript single-page UI (`frontend/`) — builds a cart, toggles
-  promotions, renders the server's itemized result verbatim (no client-side price math)
+- FastAPI + Pydantic v2 backend (`backend/`) — pricing is a pure function of its inputs:
+  the same cart and deals always price identically, and no request mutates anything. The
+  catalog and seed promotions are JSON files; the one piece of stored state is promotions
+  added at runtime through the admin API, which persist to a local SQLite file
+- Vite + React + TypeScript UI (`frontend/`) — shop, checkout, and an admin page for
+  authoring promotions; renders the server's itemized result verbatim (no client-side
+  price math)
 - [DECISIONS.md](DECISIONS.md) — the architectural choices and trade-offs
 - `docs/` — the specs the code was built against (scope, engine, optimizer, testing)
 
 ## Run
+
+**Live on Railway — nothing to install:**
+[web](https://web-production-e530a.up.railway.app) ·
+[api health](https://api-production-b55d.up.railway.app/health)
+
+To run it locally instead:
 
 Backend (Python 3.12+):
 
@@ -54,14 +63,23 @@ curl -s localhost:8000/price -X POST -H 'content-type: application/json' -d '{
 
 The response carries the itemized lines, the adjustment trace (which promotion did what,
 to which lines, in cents), `promotion_statuses` (available / claimed / applied), and
-`optimal` — true when the exhaustive best-combination search produced the result.
+`optimal` — true when the exhaustive best-combination search produced the result. It also
+carries `promotion_availability`: per promotion, whether the cart `eligible`-qualifies
+(judged against the winning combination's cascade state, so a threshold reads the subtotal
+*after* the deals that landed), the `gap` to qualifying, and which deals it
+`conflicts_with`. Together those are what let the UI tell "you don't qualify" apart from
+"you qualify but a better deal won".
+
+An optional `pinned_promotion_ids` forces chosen promotions into the result, overriding
+the optimizer — the only way to take a deal it withheld for a better total elsewhere.
 
 ## Verify
 
 ```bash
-cd backend && .venv/bin/pytest -q        # 192 tests: unit, integration, property-based,
+cd backend && .venv/bin/pytest -q        # 267 tests: unit, integration, property-based,
                                          # golden receipts, exclusivity matrix, perf budget
-cd frontend && npm test                  # single smoke test
+cd frontend && npm test                  # 12 tests: end-to-end smoke, deal-selection
+                                         # behaviour, catalog signage and stepper
 ```
 
 Full CI gate (also run on every PR): `ruff check`, `ruff format --check`, `pyright`,
@@ -70,8 +88,7 @@ Full CI gate (also run on every PR): `ruff check`, `ruff format --check`, `pyrig
 
 ## Deploy (Railway)
 
-Live: [web](https://web-production-e530a.up.railway.app) ·
-[api health](https://api-production-b55d.up.railway.app/health)
+Live links are at the top of [Run](#run).
 
 Infrastructure is code (`docs/deployment-plan.md`): two services in one Railway project —
 `api` (Dockerfile, `backend/`) and `web` (static Vite build served with SPA fallback,

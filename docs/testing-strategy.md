@@ -12,7 +12,13 @@
 
 - Line-coverage targets — invariant/behavior coverage is the goal, not a %.
 - Testing what Pydantic/FastAPI already enforce (e.g. 422 on a missing required field).
-- Dedicated frontend test suite beyond one smoke test — frontend is explicitly minimal.
+- Broad frontend coverage — the frontend is explicitly minimal. Revised (2026-08): the
+  planned single smoke test was not enough once the deals UI carried real behaviour, so
+  the frontend now also tests *which deals may be taken* and *what a click does to the
+  others* — state a smoke test cannot see and where a regression silently costs a shopper
+  money. Still no component-by-component suite: a test earns its place by covering
+  behaviour, not by covering a file. Each added test was verified to fail against the
+  behaviour it replaced.
 
 ## CI passing
 
