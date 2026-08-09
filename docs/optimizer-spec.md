@@ -41,12 +41,28 @@ Given that, the old design's branch-and-bound with a subadditivity-assumption bo
 
 `POST /price` always computes both engines (docs/core-engine-spec.md) — no opt-in flag needed. Response includes `optimal: bool` (false whenever either fallback trigger above fires) and the chosen promotion set; itemization and explanation are unchanged in shape.
 
+## Pinning (2026-08 addition)
+
+`pinned_promotion_ids` lets the shopper override the optimizer: the search is restricted to combinations in which every pinned promotion *actually applies* — containing it is not enough, since a member can be dropped mid-cascade once upstream discounts move its threshold. A pin implies a claim.
+
+Pinning is the only way to take a promotion the search withheld for a better total elsewhere. The checkout's mutual-exclusion behaviour falls out of it for free (pinning one member of a cluster displaces the other), but the P4/P2 case genuinely needs it: those two do not conflict, so no amount of un-claiming rivals would ever surface P4.
+
+Because pinning is strictly a restriction, a pinned result is worse than the unpinned optimum by construction and sometimes worse than naive. **The runtime sanity check above therefore does not apply under pins** — it would silently discard the shopper's override. The guard that replaces it is "were the pins honored"; if not (unsatisfiable pins: mutually conflicting, or ineligible on this cart) the response falls back to naive with `optimal: false`. `optimal: true` under a pin means the search was exhaustive over the combinations the shopper allowed, not that the price is the lowest available — the UI is responsible for disclosing the difference.
+
+## Explaining the outcome
+
+`promotion_availability` (see docs/pricing-ui-spec.md) reports, per promotion: `eligible`, judged against the *winning* combination's cascade state rather than the submitted cart; `gap`, the integer shortfall to qualifying in the promotion's own units; and `conflicts_with`, pairwise target overlap on this cart. Eligibility is measured after upstream deals land because that is the honest reason a promotion did not fire — a $110 cart really can miss a $100 free-shipping bar once $20 of item deals apply.
+
+Kinds opt into `gap` by overriding `Promotion.gap()`, which defaults to `None`, so a new kind stays a one-class change and one whose condition is not a threshold correctly reports nothing.
+
 ## Acceptance criteria
 
 - Oracle test: for hand-picked carts (e.g. the P4/P2 scenario), the cluster-product result matches a hand-computed optimum.
 - Property tests: optimizer total ≤ default engine total; result invariant to promotion input order; cluster partitioning is correct (two promotions share a cluster iff their targets can intersect on some cart).
 - Cap/fallback test: a synthetic catalog exceeding the cluster-product cap falls back cleanly with `optimal: false`.
 - Runtime sanity-check test: a forced-bad optimizer result (worse than or equal to zero, or worse than naive) falls back to naive with `optimal: false` rather than being returned.
+- Pinning tests: a pin forces a withheld promotion and costs the shopper relative to the free optimum; unsatisfiable pins fall back; pinning the free search's own winners reproduces its result exactly (the optimum is a fixed point of its own pins).
+- Availability tests: applied implies eligible; eligible implies no gap; conflicts are symmetric and never self-referential; conflicting promotions are never both applied; a reported shortfall, once closed, makes the promotion eligible.
 - All core invariants (never negative, no double-application, itemization sums to total) pass unchanged through the optimizer path.
 
 ## Non-goals

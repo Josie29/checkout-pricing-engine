@@ -22,7 +22,12 @@ function App() {
   const [seedError, setSeedError] = useState<string | null>(null)
 
   const [cartItems, setCartItems] = useState<CartItemInput[]>([])
+  // Deal state is two overrides on top of "everything is claimed": ids the
+  // shopper excluded are absent from `claimedIds`, and ids they forced on
+  // are in `pinnedIds`. With neither, the server picks the best allowed
+  // combination on its own — the default the checkout resets back to.
   const [claimedIds, setClaimedIds] = useState<string[]>([])
+  const [pinnedIds, setPinnedIds] = useState<string[]>([])
   // The header cart pill toggles this slide-over; adding items never opens
   // it — the pill's live count is the feedback.
   const [cartOpen, setCartOpen] = useState(false)
@@ -39,9 +44,10 @@ function App() {
         if (!cancelled) {
           setCatalog(catalogItems)
           setPromotions(promotionInfos)
-          // Every deal starts claimed, so checkout arrives as apply-all;
-          // which ones actually apply stays response-driven. Toggling after
-          // this is the user's choice — only a (re)seed resets it.
+          // Every deal starts claimed: there is no opting in, the server
+          // picks the best allowed combination, and which ones actually
+          // apply stays response-driven. Overrides after this are the
+          // shopper's — only a (re)seed resets them.
           setClaimedIds(promotionInfos.map((promo) => promo.id))
         }
       })
@@ -78,12 +84,18 @@ function App() {
 
   const stepQty = (sku: string, delta: 1 | -1) => {
     // Functional update so rapid clicks never read a stale quantity.
+    // Stepping the last unit down removes the line: a cart line must carry
+    // at least one unit (the server rejects qty 0), and the catalog card's
+    // stepper collapsing back to "Add" is the standard way out. The drawer's
+    // explicit Remove stays as a shortcut for multi-unit lines.
     setCartItems((items) =>
-      items.map((line) =>
-        line.sku === sku
-          ? { ...line, qty: Math.max(1, line.qty + delta) }
-          : line,
-      ),
+      items.flatMap((line) => {
+        if (line.sku !== sku) {
+          return [line]
+        }
+        const qty = line.qty + delta
+        return qty < 1 ? [] : [{ ...line, qty }]
+      }),
     )
   }
 
@@ -99,27 +111,42 @@ function App() {
     setCartItems((items) => items.filter((line) => line.sku !== sku))
   }
 
-  const togglePromotion = (id: string, claimed: boolean) => {
-    setClaimedIds((ids) =>
-      claimed ? [...ids, id] : ids.filter((existing) => existing !== id),
-    )
+  const toggleDeal = (id: string, on: boolean) => {
+    if (on) {
+      // Pin it: the server constrains its search to combinations where this
+      // deal actually applies and drops whatever it displaces, so the
+      // mutually-exclusive rival switches itself off in the next response.
+      // A pin implies a claim, but re-claiming keeps the two sets coherent
+      // if the shopper had excluded this deal earlier.
+      setPinnedIds((ids) => (ids.includes(id) ? ids : [...ids, id]))
+      setClaimedIds((ids) => (ids.includes(id) ? ids : [...ids, id]))
+      return
+    }
+    // Switching a deal off means "not this one" — drop both the pin and the
+    // claim, or the server would just re-apply it.
+    setPinnedIds((ids) => ids.filter((existing) => existing !== id))
+    setClaimedIds((ids) => ids.filter((existing) => existing !== id))
   }
 
-  const setAllClaimed = (ids: string[]) => {
-    // One state update replacing the array identity, so the checkout page's
-    // debounced price effect fires exactly once for a bulk apply/clear.
-    setClaimedIds(ids)
+  const resetDeals = () => {
+    // Back to the automatic best: claim everything, pin nothing. Two updates,
+    // but React batches them, so the debounced reprice still fires once.
+    setClaimedIds(
+      promotions === null ? [] : promotions.map((promo) => promo.id),
+    )
+    setPinnedIds([])
   }
 
   const removePromotion = (id: string) => {
-    // Drop it from signage/toggles and un-claim it, so the checkout's next
-    // POST /price never references the deleted id (which would 422).
+    // Drop it from signage/toggles and from both override sets, so the
+    // checkout's next POST /price never references the deleted id (a 422).
     setPromotions((existing) =>
       existing === null
         ? existing
         : existing.filter((promotion) => promotion.id !== id),
     )
     setClaimedIds((ids) => ids.filter((existing) => existing !== id))
+    setPinnedIds((ids) => ids.filter((existing) => existing !== id))
   }
 
   const addPromotion = (promotion: PromotionInfo) => {
@@ -129,6 +156,9 @@ function App() {
     setPromotions((existing) =>
       existing === null ? [promotion] : [...existing, promotion],
     )
+    // Claimed like every other deal, so it competes for a slot immediately
+    // rather than sitting inert until the shopper finds and enables it.
+    setClaimedIds((ids) => [...ids, promotion.id])
   }
 
   const retrySeed = () => {
@@ -207,15 +237,18 @@ function App() {
             catalog={catalog}
             cartItems={cartItems}
             claimedIds={claimedIds}
-            onToggle={togglePromotion}
-            onSetAllClaimed={setAllClaimed}
+            pinnedIds={pinnedIds}
+            onToggle={toggleDeal}
+            onReset={resetDeals}
             onBackToShop={() => navigate('shop')}
           />
         ) : (
           <ShopPage
             catalog={catalog}
             promotions={promotions}
+            cartItems={cartItems}
             onAdd={addCatalogItem}
+            onQtyStep={stepQty}
           />
         )}
       </main>

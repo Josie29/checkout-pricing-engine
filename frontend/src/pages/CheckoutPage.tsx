@@ -20,6 +20,7 @@ interface PricedResult {
   response: PriceResponse
   cartItems: CartItemInput[]
   claimedIds: string[]
+  pinnedIds: string[]
 }
 
 /** A failed `POST /price`, tagged with its inputs like `PricedResult`. */
@@ -29,6 +30,15 @@ interface PriceFailure {
   status: number | null
   cartItems: CartItemInput[]
   claimedIds: string[]
+  pinnedIds: string[]
+}
+
+/** The automatic best total, remembered for the cart it was computed on.
+ * Only responses with no overrides in play qualify, so this is always the
+ * unconstrained optimum — what an override is measured against. */
+interface BestKnown {
+  cartItems: CartItemInput[]
+  totalCents: number
 }
 
 interface CheckoutPageProps {
@@ -37,11 +47,32 @@ interface CheckoutPageProps {
   catalog: CatalogItem[]
   cartItems: CartItemInput[]
   claimedIds: string[]
-  onToggle: (id: string, claimed: boolean) => void
-  /** Replace the claimed set wholesale (apply all / clear all). */
-  onSetAllClaimed: (ids: string[]) => void
+  /** Deals the shopper forced on, overriding the optimizer's pick. */
+  pinnedIds: string[]
+  onToggle: (id: string, on: boolean) => void
+  /** Drop every override, back to the automatic best combination. */
+  onReset: () => void
   /** Navigate back to the shop page. */
   onBackToShop: () => void
+}
+
+/**
+ * Whether the shopper has overridden the automatic best combination.
+ *
+ * The default is every deal claimed and nothing pinned; anything else is an
+ * override, and is what puts the reset control on screen.
+ *
+ * @param promotions - Every deal the shop offers.
+ * @param claimedIds - Deals still in play (the default is all of them).
+ * @param pinnedIds - Deals forced on.
+ * @returns True when a deal has been excluded or forced.
+ */
+function overridesActive(
+  promotions: PromotionInfo[],
+  claimedIds: string[],
+  pinnedIds: string[],
+): boolean {
+  return pinnedIds.length > 0 || claimedIds.length !== promotions.length
 }
 
 /** "Back to shop" as a real link so it reads as navigation; the click is
@@ -73,12 +104,16 @@ export function CheckoutPage({
   catalog,
   cartItems,
   claimedIds,
+  pinnedIds,
   onToggle,
-  onSetAllClaimed,
+  onReset,
   onBackToShop,
 }: CheckoutPageProps) {
   const [priced, setPriced] = useState<PricedResult | null>(null)
   const [failure, setFailure] = useState<PriceFailure | null>(null)
+  // State, not a ref: the reset control's savings figure is rendered from
+  // this, so a new baseline has to trigger a re-render.
+  const [bestKnown, setBestKnown] = useState<BestKnown | null>(null)
 
   // Bumping the nonce re-runs the price effect — the Retry button's only job.
   const [priceAttempt, setPriceAttempt] = useState(0)
@@ -98,14 +133,26 @@ export function CheckoutPage({
     }
     const seq = ++priceRequestSeq.current
     const controller = new AbortController()
+    const overriding = overridesActive(promotions, claimedIds, pinnedIds)
     const timer = setTimeout(() => {
       postPrice(
-        { cart: { items: cartItems }, claimed_promotion_ids: claimedIds },
+        {
+          cart: { items: cartItems },
+          claimed_promotion_ids: claimedIds,
+          pinned_promotion_ids: pinnedIds,
+        },
         controller.signal,
       )
         .then((response) => {
           if (seq === priceRequestSeq.current) {
-            setPriced({ response, cartItems, claimedIds })
+            if (!overriding) {
+              // No overrides were in play, so this total *is* the automatic
+              // best for this cart — the baseline an override is measured
+              // against. Recorded against the cart identity so a later cart
+              // edit invalidates it rather than quoting a stale saving.
+              setBestKnown({ cartItems, totalCents: response.total_cents })
+            }
+            setPriced({ response, cartItems, claimedIds, pinnedIds })
             setFailure(null)
           }
         })
@@ -118,6 +165,7 @@ export function CheckoutPage({
             status: error instanceof ApiError ? error.status : null,
             cartItems,
             claimedIds,
+            pinnedIds,
           })
         })
     }, PRICE_DEBOUNCE_MS)
@@ -125,7 +173,7 @@ export function CheckoutPage({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [cartItems, claimedIds, priceAttempt])
+  }, [cartItems, claimedIds, pinnedIds, priceAttempt, promotions])
 
   const retryPrice = () => {
     // Clearing the failure returns the panel to its pending state while the
@@ -150,12 +198,27 @@ export function CheckoutPage({
   const priceCurrent =
     priced !== null &&
     priced.cartItems === cartItems &&
-    priced.claimedIds === claimedIds
+    priced.claimedIds === claimedIds &&
+    priced.pinnedIds === pinnedIds
   const failureCurrent =
     failure !== null &&
     failure.cartItems === cartItems &&
-    failure.claimedIds === claimedIds
+    failure.claimedIds === claimedIds &&
+    failure.pinnedIds === pinnedIds
   const priceLoading = !priceCurrent && !failureCurrent
+
+  const overridden = overridesActive(promotions, claimedIds, pinnedIds)
+  // What the override costs, but only when the automatic best is known for
+  // *this* cart — editing the cart while overridden leaves us without a
+  // baseline, and quoting a saving from the previous cart would be a lie.
+  const overrideCostCents =
+    overridden &&
+    priceCurrent &&
+    bestKnown !== null &&
+    bestKnown.cartItems === cartItems &&
+    priced.response.total_cents > bestKnown.totalCents
+      ? priced.response.total_cents - bestKnown.totalCents
+      : null
 
   // Cents saved per applied promotion, read off the response's adjustments
   // (like statuses, may briefly lag the toggles while a reprice is in
@@ -178,11 +241,13 @@ export function CheckoutPage({
           <PromotionToggles
             promotions={promotions}
             productNames={new Map(catalog.map((item) => [item.sku, item.name]))}
-            claimedIds={claimedIds}
             statuses={priced?.response.promotion_statuses ?? null}
+            availability={priced?.response.promotion_availability ?? null}
             savedCents={savedCents}
+            overridden={overridden}
+            overrideCostCents={overrideCostCents}
             onToggle={onToggle}
-            onSetAllClaimed={onSetAllClaimed}
+            onReset={onReset}
             pricePending={priceLoading}
           />
           <DealsExplainer price={priced?.response ?? null} />

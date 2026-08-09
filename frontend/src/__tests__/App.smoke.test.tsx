@@ -53,6 +53,11 @@ const BASE_PRICE: PriceResponse = {
   optimal: true,
   phase_subtotals: { after_item_cents: 4800, after_cart_cents: 4800 },
   promotion_statuses: { P1: 'available' },
+  // Three beans still qualify for P1 — it is off because the shopper
+  // switched it off, not because the cart fell short.
+  promotion_availability: {
+    P1: { eligible: true, gap: null, conflicts_with: [] },
+  },
 }
 
 /** Canned result for beans x3 with P1 claimed: one unit free. */
@@ -85,6 +90,9 @@ const DISCOUNTED_PRICE: PriceResponse = {
   optimal: true,
   phase_subtotals: { after_item_cents: 3200, after_cart_cents: 3200 },
   promotion_statuses: { P1: 'applied' },
+  promotion_availability: {
+    P1: { eligible: true, gap: null, conflicts_with: [] },
+  },
 }
 
 /** Wrap a canned body in the minimal Response surface `api.ts` uses. */
@@ -132,14 +140,19 @@ test('shop builds the cart and checkout renders the priced response', async () =
 
   render(<App />)
 
-  // Add beans x3 on the shop page once the catalog has loaded. The shop
-  // page never prices: no /price call may have fired here.
-  const addButton = await screen.findByRole('button', {
-    name: 'Add Ethiopia Yirgacheffe, 12oz',
+  // Add beans on the shop page once the catalog has loaded, then step up to
+  // three on the card's own stepper — the first Add swaps the button out for
+  // it. The shop page never prices: no /price call may have fired here.
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Add Ethiopia Yirgacheffe, 12oz',
+    }),
+  )
+  const plusButton = screen.getByRole('button', {
+    name: 'Increase quantity of Ethiopia Yirgacheffe, 12oz',
   })
-  fireEvent.click(addButton)
-  fireEvent.click(addButton)
-  fireEvent.click(addButton)
+  fireEvent.click(plusButton)
+  fireEvent.click(plusButton)
   expect(
     fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/price')),
   ).toHaveLength(0)
@@ -175,29 +188,39 @@ test('shop builds the cart and checkout renders the priced response', async () =
     ),
   ).toBeDefined()
 
-  // Unclaiming P1 reprices to the base total.
+  // The switch reflects what applied, so P1 arrives on. Switching it off
+  // excludes it and reprices to the base total.
   fireEvent.click(
     screen.getByRole('checkbox', { name: 'Beans: buy 2 get 1 free' }),
   )
   expect(await screen.findByText('$55.00')).toBeDefined()
 
-  // Apply all, then clear all: each bulk click is a single claimed-ids
-  // update, so each fires exactly one more POST /price — apply-all with
-  // every id, clear-all with none. Catches the bug where a bulk action
-  // loops over toggles and sprays one request per promotion.
-  fireEvent.click(screen.getByRole('button', { name: 'Apply all' }))
+  // Overriding the automatic best surfaces the reset control, priced against
+  // the baseline captured on arrival. Catches the checkout quoting a saving
+  // it cannot substantiate, or hiding the way back to the best price.
+  const resetButton = await screen.findByRole('button', {
+    name: 'Best deal saves $16.00',
+  })
+  fireEvent.click(resetButton)
   expect(await screen.findByText('$39.00')).toBeDefined()
-  fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
-  expect(await screen.findByText('$55.00')).toBeDefined()
+  // Back at the automatic best, there is nothing to reset.
+  expect(screen.queryByRole('button', { name: /^Best deal/ })).toBeNull()
 
   const priceBodies = fetchMock.mock.calls
     .filter(([input]) => String(input).endsWith('/price'))
-    .map(
-      ([, init]) =>
-        (JSON.parse(String(init?.body)) as { claimed_promotion_ids: string[] })
-          .claimed_promotion_ids,
-    )
-  // Arrival (default all-claimed), toggle-off, apply-all, clear-all —
-  // four requests, no extras.
-  expect(priceBodies).toEqual([['P1'], [], ['P1'], []])
+    .map(([, init]) => {
+      const body = JSON.parse(String(init?.body)) as {
+        claimed_promotion_ids: string[]
+        pinned_promotion_ids: string[]
+      }
+      return [body.claimed_promotion_ids, body.pinned_promotion_ids]
+    })
+  // Arrival (default all-claimed, nothing pinned), switch-off, reset —
+  // three requests, no extras. Catches a control that loops over toggles
+  // and sprays one request per promotion.
+  expect(priceBodies).toEqual([
+    [['P1'], []],
+    [[], []],
+    [['P1'], []],
+  ])
 })
