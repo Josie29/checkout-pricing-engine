@@ -8,6 +8,7 @@ from app.money import allocate_proportionally, percent_of_cents
 from app.promotions import (
     CartTarget,
     CategoryTarget,
+    EligibilityGap,
     Promotion,
     PromotionTarget,
     ShippingTarget,
@@ -17,6 +18,32 @@ from app.promotions import (
 
 LineTarget = SkuTarget | CategoryTarget
 """The two target kinds that select individual cart lines."""
+
+
+def _qty_gap(shortfall: int) -> EligibilityGap | None:
+    """Wrap a matched-quantity shortfall, collapsing "already met" to None.
+
+    Args:
+        shortfall: Units still needed; zero or negative means the condition
+            already holds.
+
+    Returns:
+        The gap, or None when nothing is missing.
+    """
+    return EligibilityGap(qty_short=shortfall) if shortfall > 0 else None
+
+
+def _subtotal_gap(shortfall: int) -> EligibilityGap | None:
+    """Wrap a subtotal shortfall in cents, collapsing "already met" to None.
+
+    Args:
+        shortfall: Cents still needed; zero or negative means the condition
+            already holds.
+
+    Returns:
+        The gap, or None when nothing is missing.
+    """
+    return EligibilityGap(subtotal_short_cents=shortfall) if shortfall > 0 else None
 
 
 def _as_line_target(target: PromotionTarget, kind_name: str) -> LineTarget:
@@ -130,6 +157,19 @@ class BuyXGetYFree(Promotion):
         target = _as_line_target(self.target, "BXGY")
         return sum(item.qty for item in _matched_items(target, cart)) >= self.min_qty
 
+    def gap(self, cart: Cart) -> EligibilityGap | None:
+        """Units still needed across matched lines to reach `min_qty`.
+
+        Args:
+            cart: The phase-cascade state eligibility was checked against.
+
+        Returns:
+            The missing quantity, or None if the threshold is already met.
+        """
+        target = _as_line_target(self.target, "BXGY")
+        matched = sum(item.qty for item in _matched_items(target, cart))
+        return _qty_gap(self.min_qty - matched)
+
     def apply(self, cart: Cart) -> Adjustment:
         """Discount the `free_qty` cheapest matched units off their lines.
 
@@ -207,6 +247,19 @@ class PercentOffItem(Promotion):
         """
         target = _as_line_target(self.target, "PCT_OFF_ITEM")
         return sum(item.qty for item in _matched_items(target, cart)) >= self.min_qty
+
+    def gap(self, cart: Cart) -> EligibilityGap | None:
+        """Units still needed across matched lines to reach `min_qty`.
+
+        Args:
+            cart: The phase-cascade state eligibility was checked against.
+
+        Returns:
+            The missing quantity, or None if the threshold is already met.
+        """
+        target = _as_line_target(self.target, "PCT_OFF_ITEM")
+        matched = sum(item.qty for item in _matched_items(target, cart))
+        return _qty_gap(self.min_qty - matched)
 
     def apply(self, cart: Cart) -> Adjustment:
         """Take `percent_off`% off the matched lines' combined subtotal.
@@ -339,6 +392,22 @@ class PercentOffCart(Promotion):
         """
         return cart.subtotal_cents >= self.min_subtotal_cents
 
+    def gap(self, cart: Cart) -> EligibilityGap | None:
+        """Cents still needed to reach `min_subtotal_cents`.
+
+        Measured against the post-Item cascade state, so the shortfall a
+        shopper is told matches the subtotal this promotion actually tests —
+        upstream item discounts can push a qualifying cart back under the
+        threshold, and the hint has to reflect that or it reads as a bug.
+
+        Args:
+            cart: The phase-cascade state eligibility was checked against.
+
+        Returns:
+            The missing cents, or None if the threshold is already met.
+        """
+        return _subtotal_gap(self.min_subtotal_cents - cart.subtotal_cents)
+
     def apply(self, cart: Cart) -> Adjustment:
         """Take `percent_off`% off the cart subtotal.
 
@@ -412,6 +481,20 @@ class FreeShipping(Promotion):
             True if `cart.subtotal_cents` is >= `min_subtotal_cents`.
         """
         return cart.subtotal_cents >= self.min_subtotal_cents
+
+    def gap(self, cart: Cart) -> EligibilityGap | None:
+        """Cents still needed to reach `min_subtotal_cents`.
+
+        Measured against the post-Cart cascade state — the subtotal this
+        promotion actually tests, net of every item and cart discount.
+
+        Args:
+            cart: The phase-cascade state eligibility was checked against.
+
+        Returns:
+            The missing cents, or None if the threshold is already met.
+        """
+        return _subtotal_gap(self.min_subtotal_cents - cart.subtotal_cents)
 
     def apply(self, cart: Cart) -> Adjustment:
         """Waive the shipping charge entirely.

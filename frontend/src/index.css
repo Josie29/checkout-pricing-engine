@@ -365,6 +365,40 @@ button:disabled {
   color: var(--color-accent-contrast);
 }
 
+/* Replaces the Add button once the item is in the cart, so the card itself
+   answers "how many do I have?". Sized to match the Add button's footprint
+   so cards don't reflow when one is added. */
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: 0.125rem;
+}
+
+.qty-stepper button {
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font-size: var(--font-size-base);
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  min-width: 1.75rem;
+}
+
+.qty-stepper button:hover:not(:disabled) {
+  background-color: var(--color-surface);
+}
+
+.qty-stepper-count {
+  min-width: 1.5rem;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Cart */
 .cart-table {
   width: 100%;
@@ -420,8 +454,13 @@ button:disabled {
   color: var(--color-danger);
 }
 
-/* Promotions — coupon cards with switches. Applied coupons get a caramel
-   edge and show their saving; claimed-but-inert ones dim. */
+/* Promotions — coupon cards with switches, in three states that must be
+   distinguishable at a glance:
+     --applied     caramel edge, switch on, shows the saving
+     --available   plain card, switch off, clickable to take instead
+     --ineligible  dimmed and inert, with the shortfall that unlocks it
+   Only --ineligible dims, so "greyed out" means exactly one thing: your
+   cart does not qualify. */
 .promo-head {
   display: flex;
   align-items: center;
@@ -434,9 +473,19 @@ button:disabled {
   margin: 0;
 }
 
-.promotion-bulk-actions {
-  display: flex;
-  gap: var(--space-2);
+/* Reset control: only present while the shopper is overriding the automatic
+   best, so it reads as an undo rather than a permanent action. */
+.reset-deals {
+  border-color: var(--color-callout-border);
+  background-color: var(--color-callout-bg);
+  color: var(--color-callout-text);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.promo-intro {
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-3);
 }
 
 .promotion-list {
@@ -463,8 +512,16 @@ button:disabled {
   border-left-color: var(--color-badge-bg);
 }
 
-.coupon--inert {
-  opacity: 0.7;
+/* Qualifies but a rival won this slot: full-strength, and the pointer
+   cursor advertises that clicking it will take it instead. */
+.coupon--available {
+  border-left-color: var(--color-border);
+}
+
+.coupon--ineligible {
+  opacity: 0.55;
+  background-color: var(--color-surface);
+  box-shadow: none;
 }
 
 .coupon-label {
@@ -474,6 +531,11 @@ button:disabled {
   flex: 1;
   min-width: 0;
   cursor: pointer;
+}
+
+/* Nothing to click on a deal the cart cannot use. */
+.coupon--ineligible .coupon-label {
+  cursor: default;
 }
 
 /* The checkbox stays for semantics/focus; the switch is its visual. */
@@ -556,6 +618,14 @@ button:disabled {
   color: var(--color-text-muted);
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+/* The actionable half of an ineligible card: what would unlock it. Wraps
+   (unlike .coupon-status) because it is a sentence, not a badge. */
+.coupon-hint {
+  color: var(--color-callout-text);
+  font-size: 0.75rem;
+  margin-top: var(--space-1);
 }
 
 /* Price panel — a white receipt card: thumbnailed lines with green savings

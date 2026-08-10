@@ -316,6 +316,62 @@ class TestAddedPromotionClusters:
         assert body["promotion_statuses"]["A9"] == "applied"
         assert body["promotion_statuses"]["P4"] == "claimed"
 
+    def test_per_sku_deals_on_different_lines_both_apply(self) -> None:
+        """Two added $1-off SKU deals stack; the seed bean deals don't block them.
+
+        The end-to-end regression for the reported bug: a shopper with one
+        Ethiopia and one Colombia bag toggled everything on and saw only
+        one $1 deal apply, because P1/P6 (Coffee Beans) chained both SKU
+        deals into a single cluster and the engine allowed one member per
+        cluster. Exclusivity is per line item, so both must apply. Catches
+        any regression to per-cluster exclusivity from the shopper's side.
+        """
+        for sku, name in [
+            ("COF-ETH", "Ethiopia Yirgacheffe"),
+            ("COF-COL", "Colombia Supremo"),
+        ]:
+            added = client.post(
+                "/promotions",
+                json={
+                    "type": "FIXED_OFF_ITEM",
+                    "name": f"$1.00 off {name}",
+                    "target": {"kind": "sku", "sku": sku},
+                    "amount_off_cents": 100,
+                },
+            )
+            assert added.status_code == 201
+        added_ids = [
+            entry["id"]
+            for entry in client.get("/promotions").json()
+            if entry["source"] == "runtime"
+        ]
+        priced = _price(
+            [
+                {
+                    "sku": "COF-ETH",
+                    "category": "Coffee Beans",
+                    "unit_price_cents": 1600,
+                    "qty": 1,
+                },
+                {
+                    "sku": "COF-COL",
+                    "category": "Coffee Beans",
+                    "unit_price_cents": 1400,
+                    "qty": 1,
+                },
+            ],
+            SEED_IDS + added_ids,
+        )
+        assert priced.status_code == 200
+        body = priced.json()
+        # 3000 subtotal - 100 - 100 + 1000 flat shipping. P1/P6 need 3 bags
+        # and the cart thresholds need $50, so nothing else is eligible.
+        assert body["discount_total_cents"] == 200
+        assert body["total_cents"] == 3800
+        assert [adj["promotion_id"] for adj in body["adjustments"]] == added_ids
+        assert all(body["promotion_statuses"][pid] == "applied" for pid in added_ids)
+        assert [line["discount_cents"] for line in body["lines"]] == [100, 100]
+
 
 class TestPromotionsOrdering:
     """GET /promotions lists seeds then additions, in insertion order."""
