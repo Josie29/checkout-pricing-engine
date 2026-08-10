@@ -6,7 +6,10 @@ interface CatalogListProps {
   catalog: CatalogItem[]
   /** Full promotion list; item-phase entries become per-product deal chips. */
   promotions: PromotionInfo[]
+  /** Quantity already in the cart per SKU; absent means not in the cart. */
+  qtyBySku: ReadonlyMap<string, number>
   onAdd: (item: CatalogItem) => void
+  onQtyStep: (sku: string, delta: 1 | -1) => void
 }
 
 /**
@@ -36,13 +39,25 @@ function itemPromotionsFor(
  * category below, deal chips, and a price + Add row pinned to the card
  * bottom. The heading lives in `ShopPage` (next to the deals toggle), so
  * the section labels itself.
+ *
+ * A card already in the cart swaps its Add button for a quantity stepper
+ * showing the count, so the grid answers "how many of this do I have?"
+ * without opening the drawer. Stepping the last unit down removes the line
+ * and the stepper collapses back to Add.
  */
-export function CatalogList({ catalog, promotions, onAdd }: CatalogListProps) {
+export function CatalogList({
+  catalog,
+  promotions,
+  qtyBySku,
+  onAdd,
+  onQtyStep,
+}: CatalogListProps) {
   return (
     <section aria-label="Catalog">
       <ul className="catalog-list">
         {catalog.map((item) => {
           const deals = itemPromotionsFor(item, promotions)
+          const qty = qtyBySku.get(item.sku)
           return (
             <li key={item.sku} className="catalog-item">
               <ProductImage sku={item.sku} name={item.name} />
@@ -65,14 +80,42 @@ export function CatalogList({ catalog, promotions, onAdd }: CatalogListProps) {
                   <span className="catalog-item-price">
                     {formatCents(item.unit_price_cents)}
                   </span>
-                  <button
-                    type="button"
-                    className="add-button"
-                    onClick={() => onAdd(item)}
-                    aria-label={`Add ${item.name}`}
-                  >
-                    Add
-                  </button>
+                  {qty === undefined ? (
+                    <button
+                      type="button"
+                      className="add-button"
+                      onClick={() => onAdd(item)}
+                      aria-label={`Add ${item.name}`}
+                    >
+                      Add
+                    </button>
+                  ) : (
+                    <div className="qty-stepper">
+                      <button
+                        type="button"
+                        onClick={() => onQtyStep(item.sku, -1)}
+                        aria-label={
+                          qty === 1
+                            ? `Remove ${item.name} from cart`
+                            : `Decrease quantity of ${item.name}`
+                        }
+                      >
+                        &minus;
+                      </button>
+                      {/* Live so a screen reader announces the new count
+                          rather than silently re-rendering the button. */}
+                      <output className="qty-stepper-count" aria-live="polite">
+                        {qty}
+                      </output>
+                      <button
+                        type="button"
+                        onClick={() => onQtyStep(item.sku, 1)}
+                        aria-label={`Increase quantity of ${item.name}`}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </li>

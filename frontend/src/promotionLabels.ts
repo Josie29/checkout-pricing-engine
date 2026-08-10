@@ -1,5 +1,37 @@
-import type { PromotionTarget } from './types'
+import type { EligibilityGap, PromotionTarget } from './types'
 import { formatCents } from './format'
+
+/**
+ * What a shopper would have to do to unlock a deal their cart misses.
+ *
+ * The server measures the shortfall against the cascade state the deal
+ * actually tests — i.e. after the deals that already applied — so this can
+ * legitimately name a bigger number than the visible subtotal implies. The
+ * copy says "after deals" rather than pretending otherwise.
+ *
+ * @param gap - The shortfall from `promotion_availability`, or null.
+ * @param target - The deal's target, so quantity copy can name its scope.
+ * @returns A short actionable line, or null when there is nothing to say.
+ */
+export function gapLabel(
+  gap: EligibilityGap | null | undefined,
+  target: PromotionTarget,
+): string | null {
+  if (!gap) {
+    return null
+  }
+  if (gap.subtotal_short_cents !== null) {
+    return `Spend ${formatCents(gap.subtotal_short_cents)} more after deals to unlock`
+  }
+  if (gap.qty_short !== null) {
+    // SKU-targeted deals already name their product in the deal title, so
+    // only a category needs spelling out here.
+    const scope = target.kind === 'category' ? ` from ${target.category}` : ''
+    const unit = gap.qty_short === 1 ? 'item' : 'items'
+    return `Add ${gap.qty_short} more ${unit}${scope} to unlock`
+  }
+  return null
+}
 
 /**
  * Scope line for a promotion, read directly off its target metadata (no

@@ -86,10 +86,21 @@ function chipsOn(productName: string): string[] {
     .map((chip) => chip.textContent ?? '')
 }
 
-test('chips match item promos by category or sku; cart/shipping never chip', () => {
+/** Render the grid with an optional cart, defaulting to an empty one. */
+function renderCatalog(qtyBySku: ReadonlyMap<string, number> = new Map()) {
   render(
-    <CatalogList catalog={CATALOG} promotions={PROMOTIONS} onAdd={() => {}} />,
+    <CatalogList
+      catalog={CATALOG}
+      promotions={PROMOTIONS}
+      qtyBySku={qtyBySku}
+      onAdd={() => {}}
+      onQtyStep={() => {}}
+    />,
   )
+}
+
+test('chips match item promos by category or sku; cart/shipping never chip', () => {
+  renderCatalog()
   // Category promo appears on every member of its category.
   expect(chipsOn('Ethiopia Yirgacheffe, 12oz')).toEqual([
     'Beans: buy 2 get 1 free',
@@ -102,4 +113,41 @@ test('chips match item promos by category or sku; cart/shipping never chip', () 
   // Non-targeted product gets no chips — and cart/shipping promos (P2, P7)
   // chipped no card above either.
   expect(chipsOn('Manual Burr Grinder')).toEqual([])
+})
+
+/*
+ * Removing this means nothing catches the catalog card losing track of what
+ * is already in the cart — a shopper would click Add repeatedly with no
+ * feedback on the card, which is the confusion the stepper exists to fix.
+ */
+test('a card in the cart shows its quantity and swaps Add for a stepper', () => {
+  renderCatalog(new Map([['COF-ETH', 3]]))
+  // The in-cart product shows its count and no longer offers a bare Add.
+  expect(
+    screen.queryByRole('button', { name: 'Add Ethiopia Yirgacheffe, 12oz' }),
+  ).toBeNull()
+  expect(screen.getByText('3')).toBeTruthy()
+  expect(
+    screen.getByRole('button', {
+      name: 'Increase quantity of Ethiopia Yirgacheffe, 12oz',
+    }),
+  ).toBeTruthy()
+  // Every other card is untouched and still addable.
+  expect(
+    screen.getByRole('button', { name: 'Add Colombia Supremo, 12oz' }),
+  ).toBeTruthy()
+})
+
+/*
+ * Removing this means nothing catches the minus button silently doing
+ * nothing (or stranding a qty-1 line) on the last unit — the shopper would
+ * have no way to undo an accidental Add from the card they added it on.
+ */
+test('the last unit reads as remove, not decrease', () => {
+  renderCatalog(new Map([['COF-ETH', 1]]))
+  expect(
+    screen.getByRole('button', {
+      name: 'Remove Ethiopia Yirgacheffe, 12oz from cart',
+    }),
+  ).toBeTruthy()
 })

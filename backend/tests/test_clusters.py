@@ -30,6 +30,13 @@ def fixed_off(promo_id: str, target: SkuTarget | CategoryTarget) -> Promotion:
     return FixedOffItem(id=promo_id, name=promo_id, target=target, amount_off_cents=100)
 
 
+def outcome_ids(cluster: ConflictCluster, cart: Cart) -> list[list[str]]:
+    """Promotion ids per legal outcome of `cluster`, in enumeration order."""
+    outcomes = cluster.legal_outcomes(cart)
+    assert outcomes is not None  # no limit passed
+    return [[promo.id for promo in outcome] for outcome in outcomes]
+
+
 class TestSeededClusters:
     """docs/seed-promotions.md's exclusivity table, derived not hand-coded."""
 
@@ -86,10 +93,12 @@ class TestTransitiveClosure:
     ) -> None:
         """A~B and B~C put A and C in one cluster even though A never meets C.
 
-        Catches pairwise-only clustering: A (Ethiopia-only) and C
-        (Colombia-only) would land in separate clusters and both apply
-        alongside B (all beans) — B would stack with two promotions it
-        conflicts with, double-discounting the bean lines.
+        Clustering is the optimizer's search decomposition, not the
+        exclusivity rule: A and C may still co-apply (see
+        `TestLegalOutcomes`), but whether they may depends on whether B is
+        applied, so all three must be searched together. Catches splitting
+        them into separate sub-problems, where each could independently
+        choose B and double-discount the bean lines.
         """
         promos = [
             fixed_off("A", SkuTarget(sku="COF-ETH")),
@@ -112,3 +121,55 @@ class TestTransitiveClosure:
         ]
         cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
         assert cluster_ids(derive_clusters(cart, promos).item) == [["A"], ["C"]]
+
+
+class TestLegalOutcomes:
+    """A cluster's outcomes are its independent sets, not one-member-or-none."""
+
+    def test_chained_cluster_still_lets_the_disjoint_pair_co_apply(self) -> None:
+        """In cluster [A, B, C], A and C may be taken together; B may not join.
+
+        The regression for the shopper-visible bug: two per-SKU deals on
+        different lines were chained into one cluster by a category deal
+        that overlapped both, and the one-member-per-cluster rule silently
+        dropped one of them. Catches any return to per-cluster exclusivity
+        — and, in the other direction, catches B being offered alongside a
+        SKU deal it genuinely conflicts with.
+        """
+        promos = [
+            fixed_off("A", SkuTarget(sku="COF-ETH")),
+            fixed_off("B", CategoryTarget(category="Coffee Beans")),
+            fixed_off("C", SkuTarget(sku="COF-COL")),
+        ]
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        (cluster,) = derive_clusters(cart, promos).item
+        assert outcome_ids(cluster, cart) == [[], ["C"], ["B"], ["A"], ["A", "C"]]
+
+    def test_mutually_exclusive_cluster_offers_one_member_or_none(self) -> None:
+        """P1/P6 both target every bean line, so the old k+1 rule still holds.
+
+        Catches the independent-set enumeration going too far the other way
+        and offering {P1, P6} — two bean deals stacked on one line, the
+        double-discount the cluster exists to prevent.
+        """
+        cart = Cart(items=[line("COF-ETH", qty=3)])
+        item_clusters = derive_clusters(cart, SEED_PROMOTIONS).item
+        beans = next(cl for cl in item_clusters if cl.promotions[0].id == "P1")
+        assert outcome_ids(beans, cart) == [[], ["P6"], ["P1"]]
+
+    def test_enumeration_stops_at_the_limit(self) -> None:
+        """A cluster past `limit` returns None instead of enumerating it.
+
+        The optimizer's blow-up guard: one category deal over n per-SKU
+        deals has 2**n + 1 outcomes. Catches the limit being ignored, which
+        would hang the request on a catalog the cap is meant to reject.
+        """
+        promos = [fixed_off("HUB", CategoryTarget(category="Coffee Beans"))] + [
+            fixed_off(f"S{index}", SkuTarget(sku=sku))
+            for index, sku in enumerate(["COF-ETH", "COF-COL"])
+        ]
+        cart = Cart(items=[line("COF-ETH"), line("COF-COL")])
+        (cluster,) = derive_clusters(cart, promos).item
+        # Outcomes: {}, {S0}, {S1}, {S0,S1}, {HUB} = 5.
+        assert cluster.legal_outcomes(cart, limit=5) is not None
+        assert cluster.legal_outcomes(cart, limit=4) is None

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.catalog import CatalogItem
 from app.domain import Adjustment, Cart, Phase, PhaseSubtotals, PricedLine
+from app.eligibility import PromotionAvailability, describe_availability
 from app.engine import EngineInvariantError, PromotionStatus, price_naive
 from app.optimizer import optimize
 from app.promotion_store import (
@@ -73,6 +74,16 @@ class PriceRequest(BaseModel):
 
     cart: Cart
     claimed_promotion_ids: list[str] = Field(default_factory=list[str])
+    pinned_promotion_ids: list[str] = Field(default_factory=list[str])
+    """Ids the shopper forced on, overriding the optimizer's choice.
+
+    Additive and optional — omitting it prices exactly as before. A pin
+    implies a claim, and constrains the search to combinations where the
+    pinned promotion actually applies; if none can, the response falls back
+    to the naive outcome with `optimal: false`. Pins are how the checkout
+    lets a shopper take a deal the optimizer withheld, including one no
+    amount of un-claiming rivals would surface (docs/optimizer-spec.md).
+    """
 
 
 class PriceResponse(BaseModel):
@@ -97,6 +108,14 @@ class PriceResponse(BaseModel):
     optimal: bool
     phase_subtotals: PhaseSubtotals | None
     promotion_statuses: dict[str, PromotionStatus]
+    promotion_availability: dict[str, PromotionAvailability]
+    """Per-promotion eligibility, shortfall, and conflicts (additive).
+
+    `promotion_statuses` reports *what happened*; this reports *why*.
+    Together they give the checkout its three visual states: applied,
+    qualifies-but-beaten (`eligible`, not applied), and does-not-qualify
+    (`eligible: false`, with `gap` to explain the distance).
+    """
 
 
 class PromotionSource(StrEnum):
@@ -236,13 +255,22 @@ def price(request: PriceRequest) -> PriceResponse:
     returned with `optimal: False`. Statuses reflect whichever result is
     returned; a claimed promotion the optimizer withheld stays `claimed`.
 
+    When the request pins promotions, that gate is replaced by "were the
+    pins honored" — a pinned combination is deliberately worse than the
+    unpinned optimum, so comparing it to naive would throw the shopper's
+    override away. `optimal` still reads True on a honored pin: it means
+    the search was exhaustive, and with pins the search is over the
+    combinations the shopper allowed. The response carries enough for a
+    caller to show what the override costs (`promotion_availability` plus
+    a re-price with no pins).
+
     Args:
-        request: The cart and the ids of the promotions the shopper toggled
-            on.
+        request: The cart, the ids of the promotions the shopper toggled
+            on, and any the shopper forced on.
 
     Returns:
-        The itemized result, explanation trace, totals, `optimal`, and one
-        status per stored promotion.
+        The itemized result, explanation trace, totals, `optimal`, one
+        status per stored promotion, and per-promotion availability.
 
     Raises:
         HTTPException: 422 if a claimed id names no seeded promotion.
@@ -250,17 +278,39 @@ def price(request: PriceRequest) -> PriceResponse:
             bug, surfaced as a 500 rather than mapped to a client error.
     """
     promotions = PROMOTION_STORE.all()
+    # A pin implies a claim, so the naive baseline the sanity check compares
+    # against must consider the same promotion set the optimizer does —
+    # otherwise pinning a deal naive never saw could look like a regression.
+    claimed = sorted(
+        set(request.claimed_promotion_ids) | set(request.pinned_promotion_ids)
+    )
     try:
-        naive = price_naive(request.cart, promotions, request.claimed_promotion_ids)
-        optimized = optimize(request.cart, promotions, request.claimed_promotion_ids)
+        naive = price_naive(request.cart, promotions, claimed)
+        optimized = optimize(
+            request.cart,
+            promotions,
+            claimed,
+            pinned_ids=request.pinned_promotion_ids,
+        )
     except EngineInvariantError:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    pinned = set(request.pinned_promotion_ids)
+    if pinned:
+        # Pins deliberately buy a worse total than the unpinned optimum, and
+        # sometimes worse than naive, so the never-worse-than-naive guard
+        # does not apply and would silently discard the shopper's override.
+        # The guard that does apply: the override was actually honored. If
+        # the optimizer could not satisfy the pins it already fell back, and
+        # this returns the naive outcome rather than a price nobody asked
+        # for.
+        applied = {adj.promotion_id for adj in optimized.result.adjustments}
+        outcome = optimized if pinned <= applied else naive
     # Runtime sanity check (docs/optimizer-spec.md): a live guard, not just
     # an offline property test. A legitimately-zero optimized total also
     # falls back — naive would be zero too, so nothing is lost.
-    if 0 < optimized.result.total_cents <= naive.result.total_cents:
+    elif 0 < optimized.result.total_cents <= naive.result.total_cents:
         outcome = optimized
     else:
         outcome = naive
@@ -275,6 +325,7 @@ def price(request: PriceRequest) -> PriceResponse:
         optimal=result.optimal,
         phase_subtotals=result.phase_subtotals,
         promotion_statuses=outcome.statuses,
+        promotion_availability=describe_availability(request.cart, promotions, result),
     )
 
 

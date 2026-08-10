@@ -65,3 +65,7 @@ reportUnknownArgumentType = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `tests.legality` is shared test-support code; the editable install exposes only
+# `app`, so put the project root on sys.path explicitly rather than depending on
+# pytest being invoked as `python -m pytest` (which happens to prepend cwd).
+pythonpath = ["."]

@@ -7,11 +7,15 @@ from app.promotions import Promotion, targets_can_overlap
 
 
 class ConflictCluster(BaseModel):
-    """One group of mutually exclusive promotions within a phase.
+    """One connected group of possibly-conflicting promotions in a phase.
 
-    Cluster legality (docs/optimizer-spec.md): at most one member of a
-    cluster may apply to a cart. Members are kept in declaration order —
-    the naive engine's first-eligible tie-break reads them front to back.
+    A cluster is a connected component of the phase's target-overlap graph,
+    not a set of mutually exclusive promotions. Legality is pairwise
+    (docs/seed-promotions.md: at most one Item-phase promo *per line item*),
+    so several members can apply together as long as no two of them touch
+    the same line — see `legal_outcomes`. Clusters exist to decompose the
+    optimizer's search, not to define legality. Members are kept in
+    declaration order.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -19,13 +23,60 @@ class ConflictCluster(BaseModel):
     phase: Phase
     promotions: tuple[Promotion, ...] = Field(min_length=1)
 
+    def legal_outcomes(
+        self, cart: Cart, limit: int | None = None
+    ) -> tuple[tuple[Promotion, ...], ...] | None:
+        """Every legal subset of this cluster's members for `cart`.
+
+        A subset is legal iff no two members' targets overlap on `cart` —
+        an independent set in the cluster's overlap graph. Because a
+        cluster is a connected *component*, its members are not mutually
+        exclusive: two per-SKU promotions chained into one cluster by a
+        category promotion overlapping both never touch the same line, and
+        may both apply. The empty subset (withhold the whole cluster) is
+        always legal and always returned.
+
+        Args:
+            cart: The cart overlap is decided against.
+            limit: Give up and return None once more than this many
+                outcomes exist. Bounds the work when a cluster's
+                independent sets explode — one category promotion over *n*
+                per-SKU promotions has 2**n + 1 of them. None enumerates
+                fully.
+
+        Returns:
+            The legal subsets, each in declaration order, or None if the
+            count exceeds `limit`.
+        """
+        members = self.promotions
+        overlaps = [
+            [
+                targets_can_overlap(first.target, second.target, cart)
+                for second in members
+            ]
+            for first in members
+        ]
+        outcomes: list[tuple[Promotion, ...]] = []
+
+        def walk(index: int, chosen: list[int]) -> bool:
+            """Extend `chosen` with members from `index` on; False if over `limit`."""
+            if index == len(members):
+                outcomes.append(tuple(members[position] for position in chosen))
+                return limit is None or len(outcomes) <= limit
+            if not walk(index + 1, chosen):
+                return False
+            if any(overlaps[index][position] for position in chosen):
+                return True
+            return walk(index + 1, [*chosen, index])
+
+        return tuple(outcomes) if walk(0, []) else None
+
 
 class PhaseClusters(BaseModel):
     """Conflict clusters for every phase, the shared engine/optimizer input.
 
-    The naive engine (docs/core-engine-spec.md) picks the first eligible
-    member per cluster; the optimizer (#25, docs/optimizer-spec.md)
-    enumerates each cluster's `k + 1` outcomes instead. Clusters appear in
+    The optimizer (#25, docs/optimizer-spec.md) enumerates the cartesian
+    product of every cluster's `legal_outcomes`. Clusters appear in
     declaration order of their first member; members in declaration order.
     """
 
@@ -56,7 +107,7 @@ class PhaseClusters(BaseModel):
         """Every cluster across all phases, in cascade-phase order.
 
         The optimizer's enumeration space: the cartesian product of each
-        returned cluster's outcomes (docs/optimizer-spec.md).
+        returned cluster's `legal_outcomes` (docs/optimizer-spec.md).
 
         Returns:
             Item clusters, then Cart, then Shipping.
@@ -70,13 +121,15 @@ def derive_clusters(cart: Cart, promotions: Sequence[Promotion]) -> PhaseCluster
     Two promotions of the same phase share a cluster iff their targets can
     overlap on this cart (`targets_can_overlap`), taken to transitive
     closure: A~B and B~C put A and C together even when A and C never
-    overlap directly, because B cannot be exclusive with both separately.
-    Cart- and Shipping-phase targets are singleton resources that always
-    overlap within their kind, so each of those phases collapses to one
-    cluster of all its promotions — the phase-cardinality rule of
-    docs/seed-promotions.md restated as clusters. Overlap is checked
-    against the original cart's lines: targets match on SKU/category,
-    which no phase changes.
+    overlap directly, because whether A and C may co-apply depends on
+    whether B is applied too — they belong to one search sub-problem.
+    Sharing a cluster does *not* make A and C exclusive; that is decided
+    pairwise by `ConflictCluster.legal_outcomes`. Cart- and Shipping-phase
+    targets are singleton resources that always overlap within their kind,
+    so each of those phases collapses to one cluster whose members really
+    are mutually exclusive — the phase-cardinality rule of
+    docs/seed-promotions.md. Overlap is checked against the original
+    cart's lines: targets match on SKU/category, which no phase changes.
 
     Args:
         cart: The cart being priced.

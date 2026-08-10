@@ -28,6 +28,13 @@ export interface CartItemInput {
 export interface PriceRequest {
   cart: { items: CartItemInput[] }
   claimed_promotion_ids: string[]
+  /**
+   * Deals the shopper forced on, overriding the optimizer's pick. A pin
+   * implies a claim, and constrains the search to combinations where the
+   * pinned deal actually applies — the only way to take a deal the search
+   * withheld for a better total elsewhere.
+   */
+  pinned_promotion_ids: string[]
 }
 
 /** One line of the itemized breakdown after discounts. */
@@ -68,6 +75,31 @@ export interface PhaseSubtotals {
   after_cart_cents: number
 }
 
+/**
+ * How far a cart falls short of a deal's condition, in the deal's own units.
+ * Exactly one field is set; the UI formats it ("add $10.00" / "add 2 more").
+ */
+export interface EligibilityGap {
+  subtotal_short_cents: number | null
+  qty_short: number | null
+}
+
+/**
+ * Why a deal did or did not apply — the "why" behind `promotion_statuses`.
+ *
+ * `eligible` is judged against the winning combination's cascade state, so a
+ * cart-level threshold reads the subtotal net of the item deals that actually
+ * landed. That makes `eligible: false` the honest reason a deal did not fire,
+ * and `eligible: true` on an unapplied deal mean "qualifies, but a rival won"
+ * — the state the checkout keeps live and lets the shopper pin.
+ */
+export interface PromotionAvailability {
+  eligible: boolean
+  gap: EligibilityGap | null
+  /** Ids that cannot apply alongside this one on this cart. */
+  conflicts_with: string[]
+}
+
 /** `POST /price` 200 response body. */
 export interface PriceResponse {
   lines: PricedLine[]
@@ -79,6 +111,22 @@ export interface PriceResponse {
   optimal: boolean
   phase_subtotals?: PhaseSubtotals | null
   promotion_statuses: Record<string, PromotionStatus>
+  /** Additive field; older servers omit it. */
+  promotion_availability?: Record<string, PromotionAvailability>
+}
+
+/**
+ * What the checkout knows at the moment a deal switch is clicked, handed to
+ * the app-level handler that owns the selection.
+ *
+ * Both facts come from the latest price response, so the handler never has
+ * to re-derive server logic: `appliedIds` is what the first manual switch
+ * inherits as its starting selection, and `conflictsWith` is the exact
+ * pairwise exclusivity the engine enforces on this cart.
+ */
+export interface DealToggleContext {
+  appliedIds: string[]
+  conflictsWith: string[]
 }
 
 /** What a promotion acts on (discriminated on `kind`). */
